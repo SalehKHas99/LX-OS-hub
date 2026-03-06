@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+pydantic[email]
+python-dotenv
+redis
+rq
+requests
+pyyaml
+python-multipart

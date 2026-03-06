@@ -1,0 +1,141 @@
+# ──────────────────────────────────────────────────────────────
+# LX-OS Hub — CI
+# Runs on every push and PR: lint, type-check, build, migration dry-run
+# ──────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  # ── Python API ──────────────────────────────────────────────
+  api:
+    name: API — Lint + Type Check + Migration Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lxos_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: services/api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd services/api
+          pip install -r requirements.txt
+          pip install ruff pyright
+
+      - name: Lint (ruff)
+        run: |
+          cd services/api
+          ruff check app/ --select E,W,F,I --ignore E501
+
+      - name: Syntax check all Python files
+        run: |
+          python3 -c "
+          import ast, sys, pathlib
+          errors = 0
+          for f in pathlib.Path('services/api/app').rglob('*.py'):
+              try: ast.parse(f.read_text())
+              except SyntaxError as e:
+                  print(f'SYNTAX ERROR {f}: {e}'); errors += 1
+          sys.exit(errors)
+          "
+
+      - name: Run migrations (dry-run against test DB)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lxos_test
+          JWT_SECRET: test_secret_not_for_production_abcdef1234567890
+          WEBHOOK_SECRET: test_webhook_secret_not_for_production_xyz
+          DEMO_MODE: "false"
+        run: |
+          cd services/api
+          PYTHONPATH=. python -m app.migrate
+
+      - name: Verify schema_migrations table populated
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lxos_test
+        run: |
+          python3 -c "
+          import psycopg, os
+          with psycopg.connect(os.environ['DATABASE_URL']) as conn:
+              with conn.cursor() as cur:
+                  cur.execute('SELECT count(*) FROM schema_migrations')
+                  n = cur.fetchone()[0]
+                  print(f'Migrations applied: {n}')
+                  assert n > 0, 'No migrations applied!'
+          "
+
+  # ── Next.js Frontend ────────────────────────────────────────
+  web:
+    name: Frontend — TypeScript + Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: services/web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd services/web
+          npm ci
+
+      - name: TypeScript type check
+        run: |
+          cd services/web
+          npx tsc --noEmit
+
+      - name: Next.js build
+        env:
+          NEXT_PUBLIC_API_BASE: http://localhost:8000
+        run: |
+          cd services/web
+          npm run build
+
+  # ── VS Code Extension ───────────────────────────────────────
+  vscode-ext:
+    name: VS Code Extension — Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: extensions/vscode/package-lock.json
+
+      - name: Install and compile
+        run: |
+          cd extensions/vscode
+          npm ci
+          npm run compile
