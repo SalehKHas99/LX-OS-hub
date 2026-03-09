@@ -1,77 +1,65 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from typing import Optional
+
 from app.database.session import get_db
 from app.auth.tokens import decode_token
-from app.models.user import User, UserRole
+from app.models.user import User
 
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    token = credentials.credentials
-    payload = decode_token(token)
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    payload = decode_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account suspended",
-        )
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
 
     return user
 
 
 async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials = Depends(
-        HTTPBearer(auto_error=False)
-    ),
-) -> User | None:
+) -> Optional[User]:
+    """Same as get_current_user but returns None instead of raising for unauthenticated requests."""
     if not credentials:
         return None
-    token = credentials.credentials
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
+    try:
+        return await get_current_user(credentials=credentials, db=db)
+    except HTTPException:
         return None
-    user_id = payload.get("sub")
-    result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
 
 
-def require_role(*roles: UserRole):
-    async def checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
-            )
-        return current_user
-    return checker
+async def require_moderator(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role not in ("moderator", "admin"):
+        raise HTTPException(status_code=403, detail="Moderator access required")
+    return current_user
 
 
-require_moderator = require_role(
-    UserRole.moderator, UserRole.admin, UserRole.super_admin
-)
-require_admin = require_role(UserRole.admin, UserRole.super_admin)
-require_super_admin = require_role(UserRole.super_admin)
+async def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user

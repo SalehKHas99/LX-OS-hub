@@ -1,22 +1,14 @@
 import enum
-import uuid
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import (
-    Column, Enum, Float, ForeignKey, Index, Integer, String, Text,
+    Column, String, Text, Integer, DateTime, ForeignKey, Enum as SAEnum
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from .base import Base, TimestampMixin
-
-
-class ModelFamily(str, enum.Enum):
-    midjourney = "midjourney"
-    dalle = "dalle"
-    stable_diffusion = "stable_diffusion"
-    flux = "flux"
-    comfyui = "comfyui"
-    other = "other"
+from app.models.base import Base
 
 
 class PromptStatus(str, enum.Enum):
@@ -25,7 +17,14 @@ class PromptStatus(str, enum.Enum):
     hidden = "hidden"
     removed = "removed"
 
-
+class ModelFamily(str, enum.Enum):
+    midjourney = "midjourney"
+    dalle = "dalle"
+    stable_diffusion = "stable_diffusion"
+    stable_image = "stable_image"
+    flux = "flux"
+    comfyui = "comfyui"
+    other = "other"
 class AdapterFamily(str, enum.Enum):
     midjourney = "midjourney"
     dalle = "dalle"
@@ -37,157 +36,73 @@ class ContextSource(str, enum.Enum):
     user = "user"
     ai_parsed = "ai_parsed"
 
-
-# ──────────────────────────────────────────────────────────
-# PROMPT
-# ──────────────────────────────────────────────────────────
-
-class Prompt(Base, TimestampMixin):
+class Prompt(Base):
     __tablename__ = "prompts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    title = Column(String(300), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    title = Column(String(200), nullable=False)
     raw_prompt = Column(Text, nullable=False)
-    creator_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    creator_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     model_family = Column(
-        Enum(ModelFamily, name="modelfamily"), nullable=False
+        SAEnum(ModelFamily, name="modelfamily", create_constraint=False),
+        nullable=False,
+        default=ModelFamily.other,
     )
     negative_prompt = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
-    community_id = Column(
-        UUID(as_uuid=True), ForeignKey("communities.id"), nullable=True
-    )
-    status = Column(
-        Enum(PromptStatus, name="promptstatus"),
-        default=PromptStatus.draft,
-        nullable=False,
-    )
-    score = Column(Integer, default=0, nullable=False)  # denormalized save count
-    remix_of_id = Column(
-        UUID(as_uuid=True), ForeignKey("prompts.id"), nullable=True
-    )
-    search_vector = Column(TSVECTOR)  # maintained by Postgres trigger
+    community_id = Column(UUID(as_uuid=True), ForeignKey("communities.id", ondelete="SET NULL"), nullable=True)
+    remix_of_id = Column(UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="SET NULL"), nullable=True)
+    score = Column(Integer, nullable=False, default=0)
+    status = Column(SAEnum(PromptStatus), nullable=False, default=PromptStatus.published)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    creator = relationship("User", back_populates="prompts", foreign_keys=[creator_id])
-    community = relationship("Community", back_populates="prompts")
-    context_blocks = relationship(
-        "PromptContextBlock", back_populates="prompt", cascade="all, delete-orphan"
-    )
-    versions = relationship(
-        "PromptVersion", back_populates="prompt", cascade="all, delete-orphan"
-    )
-    images = relationship(
-        "PromptImage",
-        back_populates="prompt",
-        cascade="all, delete-orphan",
-        order_by="PromptImage.sort_order",
-    )
-    comments = relationship(
-        "Comment", back_populates="prompt", cascade="all, delete-orphan"
-    )
-    prompt_tags = relationship(
-        "PromptTag", back_populates="prompt", cascade="all, delete-orphan"
-    )
-    remixes = relationship("Prompt", foreign_keys=[remix_of_id])
-    collection_items = relationship("CollectionItem", back_populates="prompt")
+    creator = relationship("User", back_populates="prompts", lazy="raise")
+    community = relationship("Community", back_populates="prompts", lazy="raise")
+    context_blocks = relationship("PromptContextBlock", back_populates="prompt", cascade="all, delete-orphan", lazy="raise")
+    prompt_tags = relationship("PromptTag", back_populates="prompt", cascade="all, delete-orphan", lazy="raise")
+    images = relationship("PromptImage", back_populates="prompt", cascade="all, delete-orphan", order_by="PromptImage.sort_order", lazy="raise")
+    comments = relationship("Comment", back_populates="prompt", cascade="all, delete-orphan", lazy="raise")
+    collection_items = relationship("CollectionItem", back_populates="prompt", lazy="raise")
+    remix_children = relationship("Prompt", foreign_keys=[remix_of_id], lazy="raise")
 
-    __table_args__ = (
-        Index("ix_prompts_search_vector", "search_vector", postgresql_using="gin"),
-        Index("ix_prompts_creator_status", "creator_id", "status"),
-        Index("ix_prompts_community_status", "community_id", "status"),
-        Index("ix_prompts_score", "score"),
-    )
-
-
-# ──────────────────────────────────────────────────────────
-# PROMPT CONTEXT BLOCKS
-# Each row = one structured context field for a prompt.
-# ──────────────────────────────────────────────────────────
 
 class PromptContextBlock(Base):
     __tablename__ = "prompt_context_blocks"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    prompt_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("prompts.id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    prompt_id = Column(UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="CASCADE"), nullable=False)
     field_name = Column(String(100), nullable=False)
-    # Valid field_name values (from product spec):
-    # subject, environment, composition, lighting, style,
-    # camera_or_render, mood, color_palette, negative_prompt,
-    # model_parameters, reference_inputs, notes_and_rationale
     field_value = Column(Text, nullable=False)
-    source_type = Column(
-        Enum(ContextSource, name="contextsource"),
-        default=ContextSource.user,
-        nullable=False,
-    )
-    confidence = Column(Float, nullable=True)  # 0.0–1.0, only set for ai_parsed blocks
-    sort_order = Column(Integer, default=0, nullable=False)
+    source_type = Column(SAEnum(ContextSource), nullable=True)
+    confidence = Column(Integer, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
 
     prompt = relationship("Prompt", back_populates="context_blocks")
 
-    __table_args__ = (
-        Index("ix_context_blocks_prompt", "prompt_id"),
-    )
-
-
-# ──────────────────────────────────────────────────────────
-# PROMPT VERSIONS
-# A compiled model-specific export of a prompt's context.
-# ──────────────────────────────────────────────────────────
-
-class PromptVersion(Base, TimestampMixin):
-    __tablename__ = "prompt_versions"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    prompt_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("prompts.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    version_no = Column(Integer, nullable=False)
-    adapter_family = Column(
-        Enum(AdapterFamily, name="adapterfamily"), nullable=False
-    )
-    compiled_prompt = Column(Text, nullable=False)
-    compile_notes = Column(Text, nullable=True)
-
-    prompt = relationship("Prompt", back_populates="versions")
-
-    __table_args__ = (
-        Index("ix_versions_prompt", "prompt_id"),
-    )
-
-
-# ──────────────────────────────────────────────────────────
-# PROMPT IMAGES
-# Output images uploaded alongside a prompt.
-# Actual file stored in Supabase Storage; only URL lives here.
-# ──────────────────────────────────────────────────────────
 
 class PromptImage(Base):
     __tablename__ = "prompt_images"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    prompt_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("prompts.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    image_url = Column(String(500), nullable=False)
-    alt_text = Column(String(300), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    prompt_id = Column(UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="CASCADE"), nullable=False)
+    image_url = Column(Text, nullable=False)
+    alt_text = Column(String(500), nullable=True)
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
-    sort_order = Column(Integer, default=0, nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
 
     prompt = relationship("Prompt", back_populates="images")
+class PromptVersion(Base):
+    __tablename__ = "prompt_versions"
 
-    __table_args__ = (
-        Index("ix_images_prompt", "prompt_id"),
-    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    prompt_id = Column(UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="CASCADE"), nullable=False)
+    version_no = Column(Integer, nullable=False, default=1)
+    adapter_family = Column(String(100), nullable=True)
+    compiled_prompt = Column(Text, nullable=False)
+    compile_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    prompt = relationship("Prompt", lazy="raise")
