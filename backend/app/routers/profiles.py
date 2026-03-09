@@ -37,6 +37,7 @@ router = APIRouter(prefix="/users", tags=["profiles"])
 
 
 async def _get_user_or_404(username: str, db: AsyncSession) -> User:
+    username = username.strip()
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
     if not user:

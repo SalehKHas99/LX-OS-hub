@@ -23,6 +23,7 @@ class ReportCreate(BaseModel):
 
 class ReportOut(BaseModel):
     id: UUID
+    reporter_id: UUID  # user who filed the report (from auth token)
     entity_type: str
     entity_id: UUID
     reason: str

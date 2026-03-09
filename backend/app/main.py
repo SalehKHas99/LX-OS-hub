@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth
 from app.routers import prompts, search, communities, collections, profiles, reports
+from app.routers import lab
 
 app = FastAPI(
     title="LX-OS API",
@@ -35,3 +36,4 @@ app.include_router(communities.router, prefix="/api/v1")
 app.include_router(collections.router, prefix="/api/v1")
 app.include_router(profiles.router,    prefix="/api/v1")
 app.include_router(reports.router,     prefix="/api/v1")
+app.include_router(lab.router,        prefix="/api/v1")

@@ -265,12 +265,28 @@ async def unsave_prompt(
 
 # ── Comments ──────────────────────────────────────────────────────────────────
 
+def _comment_to_out(c: Comment, replies: list[dict] | None = None) -> dict:
+    """Build a dict for CommentOut without touching c.replies (lazy='raise')."""
+    return {
+        "id": c.id,
+        "content": c.content,
+        "user": c.user,
+        "parent_comment_id": c.parent_comment_id,
+        "moderation_state": c.moderation_state.value if c.moderation_state else "visible",
+        "created_at": c.created_at,
+        "replies": replies if replies is not None else [],
+    }
+
+
 @router.get("/{prompt_id}/comments", response_model=list[CommentOut])
 async def get_comments(prompt_id: UUID, db: AsyncSession = Depends(get_db)):
     await _get_prompt_or_404(prompt_id, db)
     result = await db.execute(
         select(Comment)
-        .options(selectinload(Comment.user))
+        .options(
+            selectinload(Comment.user),
+            selectinload(Comment.replies).selectinload(Comment.user),
+        )
         .where(
             Comment.prompt_id == prompt_id,
             Comment.parent_comment_id == None,
@@ -278,7 +294,15 @@ async def get_comments(prompt_id: UUID, db: AsyncSession = Depends(get_db)):
         )
         .order_by(Comment.created_at.asc())
     )
-    return result.scalars().all()
+    top_level = result.scalars().all()
+    out = []
+    for c in top_level:
+        reply_dicts = [
+            _comment_to_out(reply)
+            for reply in c.replies
+        ]
+        out.append(CommentOut.model_validate(_comment_to_out(c, replies=reply_dicts)))
+    return out
 
 
 @router.post("/{prompt_id}/comments", response_model=CommentOut, status_code=201)
@@ -289,17 +313,43 @@ async def add_comment(
     current_user: User = Depends(get_current_user),
 ):
     await _get_prompt_or_404(prompt_id, db)
-    comment = Comment(
-        id=uuid4(),
-        prompt_id=prompt_id,
-        user_id=current_user.id,
-        content=payload.content,
-        parent_comment_id=payload.parent_comment_id,
-        moderation_state=ModerationState.visible,
-    )
-    db.add(comment)
-    await db.commit()
-    result = await db.execute(
-        select(Comment).options(selectinload(Comment.user)).where(Comment.id == comment.id)
-    )
-    return result.scalar_one()
+    if payload.parent_comment_id is not None:
+        parent = await db.execute(
+            select(Comment).where(
+                Comment.id == payload.parent_comment_id,
+                Comment.prompt_id == prompt_id,
+            )
+        )
+        if parent.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Parent comment not found or does not belong to this prompt",
+            )
+    try:
+        comment = Comment(
+            id=uuid4(),
+            prompt_id=prompt_id,
+            user_id=current_user.id,
+            content=payload.content,
+            parent_comment_id=payload.parent_comment_id,
+            moderation_state=ModerationState.visible,
+        )
+        db.add(comment)
+        await db.commit()
+        result = await db.execute(
+            select(Comment).options(selectinload(Comment.user)).where(Comment.id == comment.id)
+        )
+        out = result.scalar_one()
+        return CommentOut.model_validate({
+            "id": out.id,
+            "content": out.content,
+            "user": out.user,
+            "parent_comment_id": out.parent_comment_id,
+            "moderation_state": out.moderation_state.value if out.moderation_state else "visible",
+            "created_at": out.created_at,
+            "replies": [],
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e

@@ -24,7 +24,11 @@ class Comment(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     parent_comment_id = Column(UUID(as_uuid=True), ForeignKey("comments.id", ondelete="CASCADE"), nullable=True)
     content = Column(Text, nullable=False)
-    moderation_state = Column(SAEnum(ModerationState), nullable=False, default=ModerationState.visible)
+    moderation_state = Column(
+        SAEnum(ModerationState, name="moderationstate", create_constraint=False),
+        nullable=False,
+        default=ModerationState.visible,
+    )
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     prompt = relationship("Prompt", back_populates="comments")
