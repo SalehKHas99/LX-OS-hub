@@ -32,7 +32,10 @@ async def search_prompts(
             selectinload(Prompt.prompt_tags).selectinload(PromptTag.tag),
             selectinload(Prompt.images),
         )
-        .where(Prompt.status == PromptStatus.published)
+        .where(
+            Prompt.status == PromptStatus.published,
+            Prompt.share_to_feed.is_(True),
+        )
     )
 
     if q:

@@ -54,15 +54,17 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
 
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(User).where(User.email == payload.email)
-    )
+    login_id = payload.login.strip()
+    if "@" in login_id:
+        result = await db.execute(select(User).where(User.email == login_id))
+    else:
+        result = await db.execute(select(User).where(User.username == login_id))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(payload.password, user.password_hash):
+    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid username or password",
         )
 
     if not user.is_active:
@@ -93,6 +95,11 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account suspended",
+        )
 
     return TokenResponse(
         access_token=create_access_token(str(user.id), user.role.value),

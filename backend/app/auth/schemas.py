@@ -26,7 +26,8 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    """login: username or email (backend looks up by email if value contains '@', else by username)."""
+    login: str
     password: str
 
 

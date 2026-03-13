@@ -236,8 +236,8 @@ and generate optimized adapter exports for all four model families."""
         result = await _call_xenon(user_message)
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Xenon Engine returned invalid JSON")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
     prompt_id = payload.prompt_id
     if payload.create_draft:
@@ -311,8 +311,8 @@ Return ONLY this JSON:
         result = await _call_xenon(user_message)
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Xenon Engine returned invalid JSON")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
     prompt_id = payload.prompt_id
     if payload.create_draft:

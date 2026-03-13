@@ -16,6 +16,8 @@ from app.config.settings import settings
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
+AVATAR_MAX_SIZE = 2 * 1024 * 1024  # 2MB for avatars
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -69,7 +71,7 @@ async def _upload_to_supabase(file_bytes: bytes, path: str, content_type: str) -
         if response.status_code not in (200, 201):
             raise HTTPException(
                 status_code=502,
-                detail=f"Supabase Storage upload failed: {response.text}",
+                detail="Storage upload failed",
             )
     return _public_url(path)
 
@@ -84,6 +86,46 @@ async def _delete_from_supabase(path: str) -> None:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+class AvatarUploadResponse(BaseModel):
+    avatar_url: str
+
+
+@router.post("/avatar", response_model=AvatarUploadResponse, status_code=201)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload a profile picture. Accepts jpg, png, webp, gif — max 2MB.
+    Updates the current user's avatar_url and returns the new URL.
+    """
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Avatar upload is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_KEY.",
+        )
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail="File type not allowed. Use jpg, png, webp, or gif.",
+        )
+    file_bytes = await file.read()
+    if len(file_bytes) > AVATAR_MAX_SIZE:
+        raise HTTPException(
+            status_code=422,
+            detail="File too large. Maximum size is 2MB.",
+        )
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
+    storage_path = f"avatars/{current_user.id}/{uuid4()}.{ext}"
+    public_url = await _upload_to_supabase(file_bytes, storage_path, file.content_type)
+    current_user.avatar_url = public_url
+    await db.commit()
+    await db.refresh(current_user)
+    return AvatarUploadResponse(avatar_url=public_url)
+
 
 @router.post("/prompt-image", response_model=UploadedImage, status_code=201)
 async def upload_prompt_image(

@@ -49,3 +49,8 @@ class User(Base, TimestampMixin):
     collections = relationship("Collection", back_populates="owner")
     reports = relationship("Report", back_populates="reporter", foreign_keys="Report.reporter_id")
     bans = relationship("UserBan", back_populates="user", foreign_keys="UserBan.user_id")
+    owned_communities = relationship("Community", back_populates="owner", foreign_keys="Community.owner_id")
+    community_memberships = relationship("CommunityMember", back_populates="user")
+    notifications = relationship("Notification", back_populates="user", foreign_keys="Notification.user_id")
+    sent_messages = relationship("Message", foreign_keys="Message.sender_id", back_populates="sender")
+    received_messages = relationship("Message", foreign_keys="Message.recipient_id", back_populates="recipient")

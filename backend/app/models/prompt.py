@@ -2,9 +2,7 @@ import enum
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import (
-    Column, String, Text, Integer, DateTime, ForeignKey, Enum as SAEnum
-)
+from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, Boolean, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -53,6 +51,7 @@ class Prompt(Base):
     community_id = Column(UUID(as_uuid=True), ForeignKey("communities.id", ondelete="SET NULL"), nullable=True)
     remix_of_id = Column(UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="SET NULL"), nullable=True)
     score = Column(Integer, nullable=False, default=0)
+    share_to_feed = Column(Boolean, nullable=False, default=True, server_default="true")
     status = Column(SAEnum(PromptStatus), nullable=False, default=PromptStatus.published)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

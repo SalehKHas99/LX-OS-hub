@@ -11,7 +11,9 @@ from app.models.user import User
 from app.models.prompt import Prompt, PromptContextBlock, PromptStatus, ModelFamily, ContextSource
 from app.models.tag import Tag, PromptTag
 from app.models.comment import Comment, ModerationState
+from app.models.notification import Notification, NotificationType
 from app.models.collection import CollectionItem
+from app.models.community import Community, CommunityMember, CommunityVisibility
 from app.schemas.prompts import PromptCreate, PromptUpdate, PromptCard, PromptDetail
 from app.schemas.comments import CommentCreate, CommentOut
 from app.schemas.common import PaginatedResponse
@@ -78,8 +80,13 @@ async def get_feed(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     offset = (page - 1) * page_size
-    q = select(Prompt).options(*_prompt_load_options()).where(
-        Prompt.status == PromptStatus.published
+    q = (
+        select(Prompt)
+        .options(*_prompt_load_options())
+        .where(
+            Prompt.status == PromptStatus.published,
+            Prompt.share_to_feed.is_(True),
+        )
     )
     if sort == "trending" or sort == "top":
         q = q.order_by(Prompt.score.desc(), Prompt.created_at.desc())
@@ -87,7 +94,10 @@ async def get_feed(
         q = q.order_by(Prompt.created_at.desc())
 
     count_result = await db.execute(
-        select(func.count()).select_from(Prompt).where(Prompt.status == PromptStatus.published)
+        select(func.count()).select_from(Prompt).where(
+            Prompt.status == PromptStatus.published,
+            Prompt.share_to_feed.is_(True),
+        )
     )
     total = count_result.scalar_one()
 
@@ -111,6 +121,35 @@ async def create_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    share_to_feed = payload.share_to_feed
+
+    if payload.community_id:
+        member = await db.execute(
+            select(CommunityMember).where(
+                CommunityMember.community_id == payload.community_id,
+                CommunityMember.user_id == current_user.id,
+            )
+        )
+        if not member.scalar_one_or_none():
+            raise HTTPException(
+                status_code=403,
+                detail="You must be an approved member of this community to post prompts here.",
+            )
+        # Determine default sharing behavior based on community visibility
+        community_result = await db.execute(
+            select(Community).where(Community.id == payload.community_id)
+        )
+        community = community_result.scalar_one_or_none()
+        if not community:
+            raise HTTPException(status_code=404, detail="Community not found")
+        if share_to_feed is None:
+            # Public communities default to being visible in feed/search,
+            # restricted communities default to wall-only unless user opts in.
+            share_to_feed = community.visibility != CommunityVisibility.restricted
+    else:
+        if share_to_feed is None:
+            # Non-community prompts are always visible in feed/search.
+            share_to_feed = True
     try:
         prompt = Prompt(
             id=uuid4(),
@@ -124,6 +163,7 @@ async def create_prompt(
             remix_of_id=payload.remix_of_id,
             status=PromptStatus.published,
             score=0,
+            share_to_feed=share_to_feed,
         )
         db.add(prompt)
         await db.flush()
@@ -159,7 +199,8 @@ async def create_prompt(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        # Surface the underlying error in development to make debugging easier.
+        raise HTTPException(status_code=500, detail=f"Failed to create prompt: {e}") from None
 
 
 # ── Get prompt detail ─────────────────────────────────────────────────────────
@@ -245,6 +286,17 @@ async def save_prompt(
     await db.execute(
         update(Prompt).where(Prompt.id == prompt.id).values(score=Prompt.score + 1)
     )
+    if prompt.creator_id != current_user.id:
+        db.add(
+            Notification(
+                user_id=prompt.creator_id,
+                actor_id=current_user.id,
+                notification_type=NotificationType.prompt_upvote,
+                entity_type="prompt",
+                entity_id=prompt.id,
+                message=f"{current_user.username} upvoted your prompt",
+            )
+        )
     await db.commit()
 
 
@@ -260,6 +312,17 @@ async def unsave_prompt(
             score=func.greatest(Prompt.score - 1, 0)
         )
     )
+    if prompt.creator_id != current_user.id:
+        db.add(
+            Notification(
+                user_id=prompt.creator_id,
+                actor_id=current_user.id,
+                notification_type=NotificationType.prompt_downvote,
+                entity_type="prompt",
+                entity_id=prompt.id,
+                message=f"{current_user.username} downvoted your prompt",
+            )
+        )
     await db.commit()
 
 
@@ -312,7 +375,7 @@ async def add_comment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await _get_prompt_or_404(prompt_id, db)
+    prompt = await _get_prompt_or_404(prompt_id, db)
     if payload.parent_comment_id is not None:
         parent = await db.execute(
             select(Comment).where(
@@ -340,6 +403,64 @@ async def add_comment(
             select(Comment).options(selectinload(Comment.user)).where(Comment.id == comment.id)
         )
         out = result.scalar_one()
+
+        # Notifications: reply to comment author
+        if payload.parent_comment_id is not None:
+            parent_res = await db.execute(
+                select(Comment).where(Comment.id == payload.parent_comment_id)
+            )
+            parent = parent_res.scalar_one_or_none()
+            if parent and parent.user_id != current_user.id:
+                db.add(
+                    Notification(
+                        user_id=parent.user_id,
+                        actor_id=current_user.id,
+                        notification_type=NotificationType.comment_reply,
+                        entity_type="prompt",
+                        entity_id=prompt_id,
+                        message=f"{current_user.username} replied to your comment",
+                    )
+                )
+
+        # Mentions: @username in content
+        import re
+
+        mentioned_usernames = set(re.findall(r"@([a-zA-Z0-9_-]{3,30})", comment.content or ""))
+        if mentioned_usernames:
+            from app.models.user import User as UserModel
+
+            result_users = await db.execute(
+                select(UserModel).where(UserModel.username.in_(list(mentioned_usernames)))
+            )
+            for u in result_users.scalars():
+                if u.id == current_user.id:
+                    continue
+                db.add(
+                    Notification(
+                        user_id=u.id,
+                        actor_id=current_user.id,
+                        notification_type=NotificationType.comment_mention,
+                        entity_type="prompt",
+                        entity_id=prompt_id,
+                        message=f"{current_user.username} mentioned you in a comment",
+                    )
+                )
+
+        # Notify prompt creator on any comment by someone else
+        if prompt.creator_id != current_user.id:
+            db.add(
+                Notification(
+                    user_id=prompt.creator_id,
+                    actor_id=current_user.id,
+                    notification_type=NotificationType.comment_reply,
+                    entity_type="prompt",
+                    entity_id=prompt_id,
+                    message=f"{current_user.username} commented on your prompt",
+                )
+            )
+
+        await db.commit()
+
         return CommentOut.model_validate({
             "id": out.id,
             "content": out.content,
@@ -351,5 +472,5 @@ async def add_comment(
         })
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to add comment") from None

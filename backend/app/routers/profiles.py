@@ -11,9 +11,12 @@ from app.models.prompt import Prompt, PromptStatus
 from app.models.tag import PromptTag
 from app.schemas.prompts import PromptCard
 from app.schemas.common import PaginatedResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import datetime
+
+BIO_MAX_LEN = 2000
+AVATAR_URL_MAX_LEN = 2000
 
 
 class ProfileOut(BaseModel):
@@ -31,6 +34,20 @@ class ProfileOut(BaseModel):
 class ProfileUpdate(BaseModel):
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
+
+    @field_validator("bio")
+    @classmethod
+    def bio_bounded(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > BIO_MAX_LEN:
+            raise ValueError(f"Bio must be at most {BIO_MAX_LEN} characters")
+        return v
+
+    @field_validator("avatar_url")
+    @classmethod
+    def avatar_url_bounded(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > AVATAR_URL_MAX_LEN:
+            raise ValueError(f"Avatar URL must be at most {AVATAR_URL_MAX_LEN} characters")
+        return v
 
 
 router = APIRouter(prefix="/users", tags=["profiles"])

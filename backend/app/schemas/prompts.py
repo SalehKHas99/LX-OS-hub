@@ -11,6 +11,21 @@ class ContextBlockIn(BaseModel):
     field_value: str
     sort_order: int = 0
 
+    @field_validator("field_name")
+    @classmethod
+    def field_name_bounded(cls, v: str) -> str:
+        v = (v or "").strip()
+        if len(v) > 80:
+            raise ValueError("field_name must be at most 80 characters")
+        return v
+
+    @field_validator("field_value")
+    @classmethod
+    def field_value_bounded(cls, v: str) -> str:
+        if v and len(v) > 10_000:
+            raise ValueError("field_value must be at most 10000 characters")
+        return v or ""
+
 
 class ContextBlockOut(BaseModel):
     id: UUID
@@ -61,6 +76,7 @@ class PromptCreate(BaseModel):
     negative_prompt: Optional[str] = None
     notes: Optional[str] = None
     community_id: Optional[UUID] = None
+    share_to_feed: Optional[bool] = None
     remix_of_id: Optional[UUID] = None
     context_blocks: List[ContextBlockIn] = []
     tag_slugs: List[str] = []
@@ -79,6 +95,36 @@ class PromptCreate(BaseModel):
         v = v.strip()
         if len(v) < 10:
             raise ValueError("Prompt must be at least 10 characters")
+        if len(v) > 50_000:
+            raise ValueError("Prompt must be at most 50000 characters")
+        return v
+
+    @field_validator("negative_prompt")
+    @classmethod
+    def negative_bounded(cls, v: Optional[str]) -> Optional[str]:
+        if v and len(v) > 5_000:
+            raise ValueError("Negative prompt at most 5000 characters")
+        return v
+
+    @field_validator("notes")
+    @classmethod
+    def notes_bounded(cls, v: Optional[str]) -> Optional[str]:
+        if v and len(v) > 5_000:
+            raise ValueError("Notes at most 5000 characters")
+        return v
+
+    @field_validator("context_blocks")
+    @classmethod
+    def context_blocks_bounded(cls, v: List["ContextBlockIn"]) -> List["ContextBlockIn"]:
+        if len(v) > 50:
+            raise ValueError("At most 50 context blocks")
+        return v
+
+    @field_validator("tag_slugs")
+    @classmethod
+    def tag_slugs_bounded(cls, v: List[str]) -> List[str]:
+        if len(v) > 20:
+            raise ValueError("At most 20 tags")
         return v
 
 
@@ -92,6 +138,43 @@ class PromptUpdate(BaseModel):
     notes: Optional[str] = None
     context_blocks: Optional[List[ContextBlockIn]] = None
     tag_slugs: Optional[List[str]] = None
+
+    @field_validator("title")
+    @classmethod
+    def title_bounded(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if len(v) < 3 or len(v) > 200:
+                raise ValueError("Title must be 3–200 characters")
+        return v
+
+    @field_validator("raw_prompt")
+    @classmethod
+    def raw_prompt_bounded(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 50_000:
+            raise ValueError("Prompt at most 50000 characters")
+        return v
+
+    @field_validator("negative_prompt", "notes")
+    @classmethod
+    def text_bounded(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 5_000:
+            raise ValueError("Field at most 5000 characters")
+        return v
+
+    @field_validator("context_blocks")
+    @classmethod
+    def context_blocks_bounded(cls, v: Optional[List[ContextBlockIn]]) -> Optional[List[ContextBlockIn]]:
+        if v is not None and len(v) > 50:
+            raise ValueError("At most 50 context blocks")
+        return v
+
+    @field_validator("tag_slugs")
+    @classmethod
+    def tag_slugs_bounded(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None and len(v) > 20:
+            raise ValueError("At most 20 tags")
+        return v
 
 
 # ── Prompt card (feed / search results) ──────────────────────────────────────

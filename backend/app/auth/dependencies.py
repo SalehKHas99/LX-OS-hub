@@ -1,13 +1,12 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 
 from app.database.session import get_db
 from app.auth.tokens import decode_token
-from app.models.user import User
+from app.models.user import User, UserRole
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -25,6 +24,9 @@ async def get_current_user(
     payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
 
     user_id = payload.get("sub")
     if not user_id:
@@ -55,7 +57,7 @@ async def get_current_user_optional(
 async def require_moderator(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if current_user.role not in ("moderator", "admin"):
+    if current_user.role not in (UserRole.moderator, UserRole.admin, UserRole.super_admin):
         raise HTTPException(status_code=403, detail="Moderator access required")
     return current_user
 
@@ -63,6 +65,6 @@ async def require_moderator(
 async def require_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if current_user.role != "admin":
+    if current_user.role not in (UserRole.admin, UserRole.super_admin):
         raise HTTPException(status_code=403, detail="Admin access required")
     return current_user
