@@ -3,9 +3,9 @@ import api from './client'
 export { api }
 import type {
   AuthTokens, User, PromptCard, PromptDetail, PaginatedResponse,
-  Comment, Community, Collection, ParseResponse, OptimizeResponse, Notification,
+  Comment, Community, Collection, CollectionDetail, ParseResponse, OptimizeResponse, Notification,
   JoinRequest, CommunityMember, CommunityPost, ModeratorInvite, CommunityBan,
-  Message, ConversationSummary
+  Message, MessagesWithResponse, ConversationSummary, Friend, BlockedUser
 } from '../types'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -37,16 +37,42 @@ export const promptsApi = {
 
   unsave: (id: string) => api.delete(`/prompts/${id}/save`),
 
+  vote: (id: string, value: 1 | -1) =>
+    api.post(`/prompts/${id}/vote`, { value }),
+
+  removeVote: (id: string) => api.delete(`/prompts/${id}/vote`),
+
   comments: (id: string) => api.get<Comment[]>(`/prompts/${id}/comments`),
 
   addComment: (id: string, content: string, parent_comment_id?: string) =>
     api.post<Comment>(`/prompts/${id}/comments`, { content, parent_comment_id }),
+
+  updateComment: (promptId: string, commentId: string, content: string) =>
+    api.patch<Comment>(`/prompts/${promptId}/comments/${commentId}`, { content }),
+
+  deleteComment: (promptId: string, commentId: string) =>
+    api.delete(`/prompts/${promptId}/comments/${commentId}`),
+
+  voteComment: (promptId: string, commentId: string, value: 1 | -1) =>
+    api.post(`/prompts/${promptId}/comments/${commentId}/vote`, { value }),
+
+  removeCommentVote: (promptId: string, commentId: string) =>
+    api.delete(`/prompts/${promptId}/comments/${commentId}/vote`),
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
+export interface SearchSuggestResult {
+  prompts: Array<{ id: string; title: string; model_family: string | null; score: number; creator: { id: string; username: string; avatar_url: string | null }; tags: Array<{ id: string; slug: string; display_name: string }>; images: unknown[]; created_at: string | null }>
+  users: Array<{ id: string; username: string }>
+  communities: Array<{ id: string; slug: string; title: string }>
+}
+
 export const searchApi = {
   search: (params: { q?: string; model?: string; tag?: string; sort?: string; page?: number }) =>
     api.get<PaginatedResponse<PromptCard>>('/search', { params }),
+
+  suggest: (q: string) =>
+    api.get<SearchSuggestResult>('/search/suggest', { params: { q, limit: 8 } }),
 }
 
 // ── Communities ───────────────────────────────────────────────────────────────
@@ -120,7 +146,7 @@ export const communitiesApi = {
 export const collectionsApi = {
   mine: () => api.get<Collection[]>('/collections/mine'),
 
-  get: (id: string) => api.get(`/collections/${id}`),
+  get: (id: string) => api.get<CollectionDetail>(`/collections/${id}`),
 
   create: (data: object) => api.post<Collection>('/collections', data),
 
@@ -140,6 +166,9 @@ export const profilesApi = {
 
   updateMe: (data: { bio?: string; avatar_url?: string }) =>
     api.patch<User>('/users/me/profile', data),
+
+  setPublicKey: (publicKey: string) =>
+    api.put<{ ok: boolean }>('/users/me/public-key', { public_key: publicKey }),
 }
 
 // ── Uploads ───────────────────────────────────────────────────────────────────
@@ -197,14 +226,53 @@ export const messagesApi = {
   listConversations: () =>
     api.get<ConversationSummary[]>('/messages/conversations'),
 
+  getUnreadCount: () =>
+    api.get<{ count: number }>('/messages/unread-count'),
+
   getWith: (userId: string, params?: { limit?: number; before?: string }) =>
-    api.get<Message[]>(`/messages/with/${userId}`, { params }),
+    api.get<MessagesWithResponse>(`/messages/with/${userId}`, { params }),
+
+  /** New messages since timestamp (ISO string). For fast polling. */
+  getNew: (userId: string, since: string, limit = 50) =>
+    api.get<Message[]>(`/messages/with/${userId}/new`, { params: { since, limit } }),
 
   send: (recipientId: string, content: string) =>
     api.post<Message>('/messages', { recipient_id: recipientId, content }),
 
+  update: (messageId: string, content: string) =>
+    api.patch<Message>(`/messages/${messageId}`, { content }),
+
+  delete: (messageId: string) =>
+    api.delete(`/messages/${messageId}`),
+
   markRead: (userId: string) =>
     api.post<void>('/messages/mark-read', null, { params: { user_id: userId } }),
+
+  setTyping: (otherUserId: string) =>
+    api.post<void>('/messages/typing', null, { params: { other_user_id: otherUserId } }),
+
+  getTypingStatus: (userId: string) =>
+    api.get<{ typing: boolean }>(`/messages/with/${userId}/typing`),
+
+  listRequests: () => api.get<ConversationSummary[]>('/messages/requests'),
+  getRequestsCount: () => api.get<{ count: number }>('/messages/requests/count'),
+  acceptRequest: (userId: string) => api.post<void>(`/messages/requests/accept/${userId}`),
+}
+
+export const friendsApi = {
+  list: () => api.get<Friend[]>('/friends'),
+  listRequests: () => api.get<Friend[]>('/friends/requests'),
+  sendRequest: (addresseeId: string) => api.post<{ status: string; message?: string }>('/friends/request', { addressee_id: addresseeId }),
+  accept: (userId: string) => api.post<void>(`/friends/accept/${userId}`),
+  decline: (userId: string) => api.post<void>(`/friends/decline/${userId}`),
+  remove: (userId: string) => api.delete<void>(`/friends/${userId}`),
+  getStatus: (userId: string) => api.get<{ status: 'none' | 'pending_sent' | 'pending_received' | 'friends' }>(`/friends/status/${userId}`),
+}
+
+export const blocksApi = {
+  list: () => api.get<BlockedUser[]>('/blocks'),
+  block: (userId: string) => api.post<void>(`/blocks/${userId}`),
+  unblock: (userId: string) => api.delete<void>(`/blocks/${userId}`),
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
@@ -214,6 +282,9 @@ export const notificationsApi = {
 
   markRead: (ids: string[]) =>
     api.post<void>('/notifications/mark-read', { ids }),
+
+  delete: (id: string) =>
+    api.delete(`/notifications/${id}`),
 }
 
 // ── Moderator invites (accept/reject) ──────────────────────────────────────────

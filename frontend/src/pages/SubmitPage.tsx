@@ -171,13 +171,19 @@ export default function SubmitPage() {
         >
           <label className="label">Output Image</label>
           {imagePreview ? (
-            <div className="relative rounded-xl overflow-hidden aspect-video">
-              <img src={imagePreview} className="w-full h-full object-cover" alt="preview" />
+            <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', aspectRatio: '16/10' }}>
+              <img src={imagePreview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               <button
                 type="button"
                 onClick={() => { setImageFile(null); setImagePreview(null) }}
-                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-void/80 flex items-center justify-center
-                           text-ink-secondary hover:text-red-400 transition-colors"
+                style={{
+                  position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 999,
+                  background: 'rgba(0,4,8,0.8)', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--text-2)', transition: 'color 0.2s ease',
+                }}
+                onMouseOver={e => { e.currentTarget.style.color = 'rgba(248,113,113,0.95)' }}
+                onMouseOut={e => { e.currentTarget.style.color = 'var(--text-2)' }}
               >
                 <X size={14} />
               </button>
@@ -240,7 +246,8 @@ export default function SubmitPage() {
           <div style={{ marginBottom: 16 }}>
             <label className="label">Raw Prompt *</label>
             <textarea
-              className="input resize-none h-28 text-sm font-mono"
+              className="input"
+              style={{ resize: 'none', minHeight: 112, fontSize: 13, fontFamily: 'var(--font-mono)' }}
               value={form.raw_prompt}
               onChange={e => setForm(f => ({ ...f, raw_prompt: e.target.value }))}
               placeholder="Paste your full prompt text here..."
@@ -251,7 +258,8 @@ export default function SubmitPage() {
           <div style={{ marginBottom: 16 }}>
             <label className="label">Negative Prompt</label>
             <textarea
-              className="input resize-none h-16 text-sm font-mono"
+              className="input"
+              style={{ resize: 'none', minHeight: 64, fontSize: 13, fontFamily: 'var(--font-mono)' }}
               value={form.negative_prompt}
               onChange={e => setForm(f => ({ ...f, negative_prompt: e.target.value }))}
               placeholder="Things to exclude from the image..."
@@ -336,12 +344,14 @@ export default function SubmitPage() {
                 }}
               >
                 {form.tags.map(tag => (
-                  <span key={tag} className="badge flex items-center gap-1">
+                  <span key={tag} className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     {tag}
                     <button
                       type="button"
                       onClick={() => setForm(f => ({ ...f, tags: f.tags.filter(t => t !== tag) }))}
-                      className="hover:text-red-400 transition-colors"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', transition: 'color 0.2s ease' }}
+                      onMouseOver={e => { e.currentTarget.style.color = 'rgba(248,113,113,0.95)' }}
+                      onMouseOut={e => { e.currentTarget.style.color = 'inherit' }}
                     >
                       <X size={10} />
                     </button>
@@ -354,7 +364,7 @@ export default function SubmitPage() {
 
         {/* Context blocks (optional) */}
         <div className="theme-card shimmer-top" style={{ marginTop: 20, padding: 20 }}>
-          <label className="label mb-1">Context Blocks</label>
+          <label className="label" style={{ marginBottom: 4 }}>Context Blocks</label>
           <p
             style={{
               fontSize: 12,
@@ -376,7 +386,8 @@ export default function SubmitPage() {
               <div key={field}>
                 <label className="label">{field.replace(/_/g, ' ')}</label>
                 <input
-                  className="input text-sm"
+                  className="input"
+                  style={{ fontSize: 13 }}
                   value={contextBlocks[field]}
                   onChange={e => setContextBlocks(b => ({ ...b, [field]: e.target.value }))}
                   placeholder={`Optional — describe ${field.replace(/_/g, ' ')}...`}
@@ -487,8 +498,11 @@ export default function SubmitPage() {
         <div className="theme-card shimmer-top" style={{ padding: 20, marginTop: 20 }}>
           <label className="label">Notes & Rationale</label>
           <textarea
-            className="input resize-none h-20 text-sm"
+            className="input"
             style={{
+              resize: 'none',
+              minHeight: 80,
+              fontSize: 13,
               background:
                 'linear-gradient(135deg, rgba(15,23,42,0.96), rgba(15,23,42,0.90))',
               borderRadius: 18,

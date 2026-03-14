@@ -17,6 +17,14 @@ def app():
 
 
 @pytest.fixture()
+def client_inprocess(app):
+    """In-process test client; no running server required. Use for /health and mocked routes."""
+    from fastapi.testclient import TestClient
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture()
 def client(app):
     # Black-box integration client against a running API server.
     # This avoids asyncpg/loop issues that happen when running the app in-process.

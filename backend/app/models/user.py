@@ -36,6 +36,8 @@ class User(Base, TimestampMixin):
         nullable=False,
     )
     is_active = Column(Boolean, default=True, nullable=False)
+    # E2E messaging: base64-encoded public key for ECDH (P-256)
+    public_key = Column(Text, nullable=True)
 
     # OAuth support (optional — leave null for email/password users)
     oauth_provider = Column(String(50), nullable=True)       # e.g. "google"

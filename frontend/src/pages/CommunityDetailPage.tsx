@@ -264,57 +264,23 @@ export default function CommunityDetailPage() {
 
   if (loadingCom) {
     return (
-      <div
-        style={{
-          maxWidth: 960,
-          margin: '0 auto',
-          paddingTop: 32,
-        }}
-      >
-        <div
-          style={{
-            marginBottom: 20,
-            borderRadius: 18,
-            border: '1px solid rgba(148,163,184,0.4)',
-            background: 'rgba(15,23,42,0.9)',
-            padding: 20,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              gap: 16,
-              alignItems: 'center',
-            }}
-          >
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 18,
-                background: 'rgba(31,41,55,0.9)',
-              }}
-            />
+      <div className="page-container page-content" style={{ maxWidth: 960, margin: '0 auto' }}>
+        <Link to="/communities" className="page-header-breadcrumb" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 20 }}>
+          <ArrowLeft size={14} /> Communities
+        </Link>
+        <div className="theme-card card-padding shimmer-top" style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <div className="skeleton" style={{ width: 56, height: 56, borderRadius: 18 }} />
             <div style={{ flex: 1 }}>
-              <div
-                style={{
-                  height: 18,
-                  width: '40%',
-                  borderRadius: 999,
-                  background: 'rgba(55,65,81,0.9)',
-                  marginBottom: 8,
-                }}
-              />
-              <div
-                style={{
-                  height: 12,
-                  width: '24%',
-                  borderRadius: 999,
-                  background: 'rgba(55,65,81,0.7)',
-                }}
-              />
+              <div className="skeleton skeleton-line medium" style={{ height: 18, marginBottom: 8 }} />
+              <div className="skeleton skeleton-line short" style={{ height: 12 }} />
             </div>
           </div>
+        </div>
+        <div style={{ display: 'grid', gap: 12 }}>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="skeleton theme-card" style={{ height: 100, borderRadius: 16 }} />
+          ))}
         </div>
       </div>
     )
@@ -1822,7 +1788,7 @@ export default function CommunityDetailPage() {
             {community.owner_username && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>
-                  Owner: <strong style={{ color: 'var(--text-1)', fontWeight: 600 }}>{community.owner_username}</strong>
+                  Owner: <Link to={`/u/${community.owner_username}`} style={{ color: 'var(--text-1)', fontWeight: 600, textDecoration: 'none' }} className="hover:underline">{community.owner_username}</Link>
                 </span>
                 {community.show_owner_badge !== false && (
                   <span

@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { promptsApi } from '../api'
+import { PromptCard } from '../components/prompts/PromptCard'
 import { Sparkles, TrendingUp, Clock, BookOpen } from 'lucide-react'
-
-interface Prompt { id: string; title: string; model_family?: string | null; creator?: { username: string }; images?: { image_url: string }[] }
+import type { PromptCard as PromptCardType } from '../types'
 
 export default function FeedPage() {
-  const [prompts, setPrompts] = useState<Prompt[]>([])
+  const [prompts, setPrompts] = useState<PromptCardType[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('trending')
 
@@ -50,9 +50,7 @@ export default function FeedPage() {
         {loading ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 16 }}>
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="theme-card" style={{ height: 280, borderRadius: 16, opacity: 0.5 + i * 0.06 }}>
-                <div style={{ height: '100%', background: 'linear-gradient(135deg,rgba(110,86,207,0.08),rgba(67,56,202,0.04))', borderRadius: 16 }} />
-              </div>
+              <div key={i} className="skeleton-prompt-card theme-card" style={{ minHeight: 280 }} />
             ))}
           </div>
         ) : prompts.length === 0 ? (
@@ -65,28 +63,9 @@ export default function FeedPage() {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 16 }}>
             {prompts.map((p, i) => (
-              <Link key={p.id} to={`/prompt/${p.id}`} className="art-card fade-up"
-                style={{ height: 280, animationDelay: `${i * 40}ms`, textDecoration: 'none' }}>
-                {p.images?.[0]?.image_url
-                  ? <img src={p.images[0].image_url} alt={p.title} className="card-img" />
-                  : <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(135deg, hsl(${260 + i * 18},60%,12%), hsl(${240 + i * 22},70%,8%))` }} />
-                }
-                <div className="card-overlay" />
-                <div className="card-body">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                    <span className="badge" style={{ fontSize: 9.5, padding: '2px 7px' }}>{p.model_family ?? 'General'}</span>
-                  </div>
-                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: '#f8fafc', marginBottom: 4, lineHeight: 1.3,
-                    overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
-                    {p.title}
-                  </p>
-                  {p.creator && (
-                    <span style={{ fontSize: 11, color: 'rgba(196,181,253,0.7)', fontFamily: 'var(--font-body)' }}>
-                      by {p.creator.username}
-                    </span>
-                  )}
-                </div>
-              </Link>
+              <div key={p.id} className="fade-up" style={{ animationDelay: `${i * 40}ms` }}>
+                <PromptCard prompt={p} />
+              </div>
             ))}
           </div>
         )}

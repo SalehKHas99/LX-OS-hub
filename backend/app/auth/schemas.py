@@ -50,5 +50,6 @@ class UserResponse(BaseModel):
     role: str
     bio: str | None
     avatar_url: str | None
+    public_key: str | None = None  # E2E messaging: base64 P-256 public key
 
     model_config = {"from_attributes": True}

@@ -3,7 +3,12 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
+import { shouldRetryQuery } from './lib/queryRetry'
 import './index.css'
+
+if (import.meta.env.DEV) {
+  console.log('[LX-OS] Dev mode — source bundle. Profiles & Messages are active.')
+}
 
 // Andromeda — galaxy theme is always dark
 document.documentElement.classList.add('dark')
@@ -12,11 +17,7 @@ document.documentElement.classList.remove('light')
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: (failureCount, error: any) => {
-        const status = error?.response?.status
-        if (typeof status === 'number' && status >= 400 && status < 500) return false
-        return failureCount < 1
-      },
+      retry: shouldRetryQuery,
       refetchOnWindowFocus: false,
       staleTime: 15_000,
     },

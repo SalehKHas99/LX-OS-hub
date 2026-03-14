@@ -4,21 +4,23 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 function notificationHref(n: Notification): string | null {
   if (n.entity_type === 'community' && n.entity_slug) return `/c/${n.entity_slug}`
   if (n.entity_type === 'prompt') return `/prompt/${n.entity_id}`
+  if (n.entity_type === 'comment' && n.prompt_id) return `/prompt/${n.prompt_id}#comment-${n.entity_id}`
   if (n.entity_type === 'message_thread') return `/messages?with=${n.entity_id}`
+  if (n.notification_type === 'friend_request') return '/messages?tab=friends'
   return null
 }
 import {
-  Home, Compass, FlaskConical, PlusCircle, Users,
-  BookMarked, LogOut, Menu, X, Bell, Search, Settings, MessageCircle
+  Home, Compass, FlaskConical, PlusCircle, Users, User, UserPlus,
+  BookMarked, LogOut, Menu, X, Bell, Settings, MessageCircle
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../store'
 import GalaxyBackground from '../GalaxyBackground'
-import { notificationsApi, moderatorInvitesApi } from '../../api'
+import { notificationsApi, moderatorInvitesApi, messagesApi } from '../../api'
 import type { Notification } from '../../types'
 import toast from 'react-hot-toast'
 
-const NAV = [
+const NAV_BASE = [
   { to: '/feed',        icon: Home,         label: 'Explore' },
   { to: '/explore',     icon: Compass,      label: 'Search' },
   { to: '/lab',         icon: FlaskConical, label: 'Context Optimizer' },
@@ -89,6 +91,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (notifOpen && isAuthenticated) refetchNotifications()
   }, [notifOpen, isAuthenticated, refetchNotifications])
 
+  const { data: messagesUnread = { count: 0 } } = useQuery({
+    queryKey: ['messages', 'unread-count'],
+    queryFn: () => messagesApi.getUnreadCount().then(r => r.data),
+    enabled: isAuthenticated,
+    refetchInterval: 30_000,
+  })
+
   const { data: myModeratorInvites = [] } = useQuery({
     queryKey: ['moderator-invites'],
     queryFn: () => moderatorInvitesApi.listMine().then(r => r.data),
@@ -99,6 +108,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     for (const inv of myModeratorInvites) m[inv.community_id] = inv.id
     return m
   }, [myModeratorInvites])
+
+  // Nav items: when logged in, add "My profile" after Messages so profiles are discoverable
+  const NAV = useMemo(() => {
+    if (!user?.username) return NAV_BASE
+    return [
+      ...NAV_BASE.slice(0, 5),
+      { to: `/u/${user.username}`, icon: User, label: 'My profile' },
+      ...NAV_BASE.slice(5),
+    ]
+  }, [user?.username])
 
   const acceptInviteMutation = useMutation({
     mutationFn: (inviteId: string) => moderatorInvitesApi.accept(inviteId).then(r => r.data),
@@ -226,7 +245,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Nav */}
       <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
-        {NAV.map(({ to, icon: Icon, label }) => (
+        {NAV.map(({ to, icon: Icon, label }) => {
+          const isMessages = to === '/messages'
+          const unread = isMessages ? (messagesUnread?.count ?? 0) : 0
+          return (
           <NavLink key={to} to={to} style={({ isActive }) => ({
             display: 'flex', alignItems: 'center', gap: 12,
             padding: collapsed ? '11px 14px' : '11px 16px',
@@ -245,14 +267,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           })}>
             {({ isActive }) => (
               <>
-                <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75, display: 'flex' }}>
+                <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75, display: 'flex', position: 'relative' }}>
                   <Icon size={18} />
+                  {unread > 0 && (
+                    <span style={{
+                      position: 'absolute', top: -4, right: -6,
+                      minWidth: 16, height: 16, borderRadius: 999,
+                      background: 'rgba(167,139,250,0.95)', color: '#0b0615',
+                      fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 4px',
+                    }}>
+                      {unread > 9 ? '9+' : unread}
+                    </span>
+                  )}
                 </span>
                 {!collapsed && <span>{label}</span>}
               </>
             )}
           </NavLink>
-        ))}
+          )
+        })}
       </nav>
 
       {/* Bottom */}
@@ -302,21 +336,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               border: '1px solid rgba(167,139,250,0.08)',
               justifyContent: collapsed ? 'center' : 'flex-start',
             }}>
-              <div style={{
-                width: 30, height: 30, borderRadius: '50%',
-                background: 'linear-gradient(135deg,#6E56CF,#4338CA)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0,
-              }}>
-                {user?.username?.[0]?.toUpperCase() ?? 'U'}
-              </div>
-              {!collapsed && (
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--star-silver)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {user?.username ?? 'User'}
-                  </div>
+              <Link
+                to={user?.username ? `/u/${user.username}` : '/feed'}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit' }}
+                title={user?.username ? 'My profile' : ''}
+              >
+                <div style={{
+                  width: 30, height: 30, borderRadius: '50%',
+                  background: 'linear-gradient(135deg,#6E56CF,#4338CA)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0,
+                }}>
+                  {user?.username?.[0]?.toUpperCase() ?? 'U'}
                 </div>
-              )}
+                {!collapsed && (
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--star-silver)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {user?.username ?? 'User'}
+                    </div>
+                  </div>
+                )}
+              </Link>
               {!collapsed && (
                 <button onClick={handleLogout} title="Log out" style={{
                   background: 'none', border: 'none', cursor: 'pointer',
@@ -405,7 +445,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
-          {NAV.map(({ to, icon: Icon, label }) => (
+          {NAV.map(({ to, icon: Icon, label }) => {
+            const isMessages = to === '/messages'
+            const unread = isMessages ? (messagesUnread?.count ?? 0) : 0
+            return (
             <NavLink key={to} to={to} style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: 12,
               padding: collapsed ? '11px 14px' : '11px 16px',
@@ -423,14 +466,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             })}>
               {({ isActive }) => (
                 <>
-                  <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75, display: 'flex' }}>
+                  <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75, display: 'flex', position: 'relative' }}>
                     <Icon size={18} />
+                    {unread > 0 && (
+                      <span style={{
+                        position: 'absolute', top: -4, right: -6,
+                        minWidth: 16, height: 16, borderRadius: 999,
+                        background: 'rgba(167,139,250,0.95)', color: '#0b0615',
+                        fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: '0 4px',
+                      }}>
+                        {unread > 9 ? '9+' : unread}
+                      </span>
+                    )}
                   </span>
                   {!collapsed && <span>{label}</span>}
                 </>
               )}
             </NavLink>
-          ))}
+            )
+          })}
         </nav>
 
         <div style={{
@@ -463,29 +518,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 border: '1px solid rgba(167,139,250,0.08)',
                 justifyContent: collapsed ? 'center' : 'flex-start',
               }}>
-                <div style={{
-                  width: 30, height: 30, borderRadius: '50%',
-                  background: 'linear-gradient(135deg,#6E56CF,#4338CA)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0,
-                }}>
-                  {user?.username?.[0]?.toUpperCase() ?? 'U'}
-                </div>
-                {!collapsed && (
-                  <>
+                <Link
+                  to={user?.username ? `/u/${user.username}` : '/feed'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit' }}
+                  title={user?.username ? 'My profile' : ''}
+                >
+                  <div style={{
+                    width: 30, height: 30, borderRadius: '50%',
+                    background: 'linear-gradient(135deg,#6E56CF,#4338CA)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0,
+                  }}>
+                    {user?.username?.[0]?.toUpperCase() ?? 'U'}
+                  </div>
+                  {!collapsed && (
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--star-silver)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {user?.username ?? 'User'}
                       </div>
                     </div>
-                    <button onClick={handleLogout} title="Log out" style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: 'rgba(107,114,128,0.55)', padding: 4, borderRadius: 6,
-                      display: 'flex', alignItems: 'center', flexShrink: 0,
-                    }}>
-                      <LogOut size={14} />
-                    </button>
-                  </>
+                  )}
+                </Link>
+                {!collapsed && (
+                  <button onClick={handleLogout} title="Log out" style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'rgba(107,114,128,0.55)', padding: 4, borderRadius: 6,
+                    display: 'flex', alignItems: 'center', flexShrink: 0,
+                  }}>
+                    <LogOut size={14} />
+                  </button>
                 )}
               </div>
             </>
@@ -516,6 +577,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         borderBottom: '1px solid rgba(167,139,250,0.09)',
         transition: 'left 280ms cubic-bezier(0.16,1,0.3,1)',
       }}>
+        {/* Dev-mode indicator: only in npm run dev (not in build/preview) */}
+        {import.meta.env.DEV && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+            color: 'rgba(34,197,94,0.9)', background: 'rgba(34,197,94,0.12)',
+            padding: '4px 8px', borderRadius: 6, flexShrink: 0,
+          }} title="Source dev server — profiles & messages active">
+            DEV
+          </span>
+        )}
+
         {/* Mobile hamburger */}
         <button onClick={() => setMobileOpen(o => !o)} style={{
           display: 'none', background: 'none', border: 'none',
@@ -524,25 +596,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }} className="mobile-menu-btn">
           {mobileOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
-
-        {/* Search */}
-        <div style={{
-          flex: 1, maxWidth: 440,
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: 'rgba(255,255,255,0.035)',
-          border: '1px solid rgba(167,139,250,0.10)',
-          borderRadius: 10, padding: '0 14px', height: 36,
-        }}>
-          <Search size={14} style={{ color: 'rgba(107,114,128,0.55)', flexShrink: 0 }} />
-          <input
-            placeholder="Search prompts, creators, models…"
-            style={{
-              background: 'transparent', border: 'none', outline: 'none',
-              color: 'var(--text-1)', fontFamily: 'var(--font-body)',
-              fontSize: 13, width: '100%',
-            }}
-          />
-        </div>
 
         <div style={{ flex: 1 }} />
 
@@ -752,6 +805,40 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                               flexShrink: 0,
                             }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
+                              {n.actor_username && (
+                                <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <span style={{ color: 'var(--text-3)', fontSize: 11 }}>From: </span>
+                                  <Link
+                                    to={`/u/${n.actor_username}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{ color: 'var(--accent-h)', fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
+                                    className="hover:underline"
+                                  >
+                                    {n.actor_username}
+                                  </Link>
+                                  {n.notification_type === 'friend_request' && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', background: 'rgba(34,197,94,0.2)', padding: '2px 6px', borderRadius: 6 }}>Friend request</span>
+                                  )}
+                                  {n.notification_type === 'message_request' && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', background: 'rgba(124,58,237,0.15)', padding: '2px 6px', borderRadius: 6 }}>Message request</span>
+                                  )}
+                                  {n.notification_type === 'message_received' && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', background: 'rgba(148,163,184,0.15)', padding: '2px 6px', borderRadius: 6 }}>New message</span>
+                                  )}
+                                  {['prompt_upvote', 'comment_upvote'].includes(n.notification_type) && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', background: 'rgba(34,197,94,0.2)', padding: '2px 6px', borderRadius: 6 }}>Upvote</span>
+                                  )}
+                                  {['prompt_downvote', 'comment_downvote'].includes(n.notification_type) && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', background: 'rgba(248,113,113,0.15)', padding: '2px 6px', borderRadius: 6 }}>Downvote</span>
+                                  )}
+                                  {n.notification_type === 'comment_mention' && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent-h)', background: 'rgba(167,139,250,0.2)', padding: '2px 6px', borderRadius: 6 }}>Mention</span>
+                                  )}
+                                  {n.notification_type === 'comment_reply' && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-2)', background: 'rgba(148,163,184,0.15)', padding: '2px 6px', borderRadius: 6 }}>Reply</span>
+                                  )}
+                                </div>
+                              )}
                               <div style={{ color: 'var(--text-1)', fontSize: 12.5, lineHeight: 1.35 }}>
                                 {hasInviteActions && n.entity_slug ? (
                                   <Link
@@ -768,8 +855,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                   n.message
                                 )}
                               </div>
-                              <div style={{ color: 'var(--text-3)', fontSize: 11, marginTop: 4, fontFamily: 'var(--font-mono)' }}>
-                                {new Date(n.created_at).toLocaleString()}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                                <span style={{ color: 'var(--text-3)', fontSize: 11, fontFamily: 'var(--font-mono)' }}>{new Date(n.created_at).toLocaleString()}</span>
+                                <button
+                                  type="button"
+                                  aria-label="Delete notification"
+                                  onClick={async (e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    try {
+                                      await notificationsApi.delete(n.id)
+                                      qc.invalidateQueries({ queryKey: ['notifications'] })
+                                    } catch { /* ignore */ }
+                                  }}
+                                  style={{ padding: '2px 6px', border: 'none', background: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 11 }}
+                                >
+                                  Delete
+                                </button>
                               </div>
                               {hasInviteActions && (
                                 <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>

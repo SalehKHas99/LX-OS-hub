@@ -10,6 +10,10 @@ class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=10000)
 
 
+class MessageUpdate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=10000)
+
+
 class MessageOut(BaseModel):
     id: UUID
     sender_id: UUID
@@ -23,6 +27,15 @@ class MessageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MessagesWithResponse(BaseModel):
+    """Paginated thread: messages oldest-first, plus cursor for loading more."""
+    messages: list[MessageOut]
+    has_more: bool = False
+    next_before: Optional[datetime] = None
+    other_user_id: Optional[UUID] = None
+    other_username: Optional[str] = None
+
+
 class ConversationSummary(BaseModel):
     """One conversation with another user (for inbox list)."""
     other_user_id: UUID
@@ -30,3 +43,7 @@ class ConversationSummary(BaseModel):
     last_message_preview: Optional[str] = None
     last_at: Optional[datetime] = None
     unread_count: int = 0
+
+
+class TypingResponse(BaseModel):
+    typing: bool

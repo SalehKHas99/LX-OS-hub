@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import UUID, uuid4
@@ -10,6 +10,7 @@ import os
 
 from app.database.session import get_db
 from app.auth.dependencies import get_current_user
+from app.auth.rate_limit import check_rate_limit, get_upload_rate_limit_key, UPLOAD_LIMIT
 from app.models.user import User
 from app.models.prompt import Prompt, PromptImage, PromptStatus
 from app.config.settings import settings
@@ -88,15 +89,26 @@ async def _delete_from_supabase(path: str) -> None:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
+def _require_upload_rate_limit(request: Request) -> None:
+    key = get_upload_rate_limit_key(request)
+    if not check_rate_limit(key, limit=UPLOAD_LIMIT):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many uploads. Try again in a minute.",
+        )
+
+
 class AvatarUploadResponse(BaseModel):
     avatar_url: str
 
 
 @router.post("/avatar", response_model=AvatarUploadResponse, status_code=201)
 async def upload_avatar(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(_require_upload_rate_limit),
 ):
     """
     Upload a profile picture. Accepts jpg, png, webp, gif — max 2MB.
@@ -129,11 +141,13 @@ async def upload_avatar(
 
 @router.post("/prompt-image", response_model=UploadedImage, status_code=201)
 async def upload_prompt_image(
+    request: Request,
     prompt_id: UUID = Form(...),
     alt_text: Optional[str] = Form(None),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _: None = Depends(_require_upload_rate_limit),
 ):
     """
     Upload an image and attach it to a prompt.

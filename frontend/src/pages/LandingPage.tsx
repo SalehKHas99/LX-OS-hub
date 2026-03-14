@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 
-// Placeholder art images (will be replaced by real prompt outputs)
 const HERO_IMAGES = [
   'https://images.unsplash.com/photo-1686097928367-9f1e4e4a6e36?w=1400&q=80',
   'https://images.unsplash.com/photo-1707343848552-893e05dba6ac?w=800&q=80',
@@ -11,170 +10,122 @@ const HERO_IMAGES = [
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-void text-ink-primary overflow-hidden">
-
-      {/* ── Top bar ─────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-7 h-7 bg-lx-white flex items-center justify-center">
-            <span className="font-display text-void text-xs leading-none">LX</span>
-          </div>
-          <span className="font-sub font-semibold tracking-widest uppercase text-sm text-ink-primary">
+    <div className="landing-root">
+      <header className="landing-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="landing-logo-box">LX</div>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', fontSize: 14, color: 'var(--text-1)' }}>
             LX-OS
           </span>
         </div>
-        <div className="flex items-center gap-6">
-          <Link to="/explore" className="overline hover:text-ink-primary transition-colors">Explore</Link>
-          <Link to="/login" className="overline hover:text-ink-primary transition-colors">Sign in</Link>
-          <Link to="/register" className="btn-primary text-xs px-4 py-2">Join Free</Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <Link to="/explore" className="landing-overline" style={{ marginBottom: 0, textDecoration: 'none', color: 'var(--text-3)' }}>Explore</Link>
+          <Link to="/login" className="landing-overline" style={{ marginBottom: 0, textDecoration: 'none', color: 'var(--text-3)' }}>Sign in</Link>
+          <Link to="/register" className="btn btn-primary" style={{ fontSize: 12, padding: '8px 16px' }}>Join Free</Link>
         </div>
       </header>
 
-      {/* ── Hero — full viewport ─────────────────────────── */}
-      <section className="relative h-screen w-full">
-        {/* Background image with ken burns */}
-        <div className="absolute inset-0 overflow-hidden">
-          <img
-            src={HERO_IMAGES[0]}
-            alt="AI Art"
-            className="w-full h-full object-cover animate-ken-burns"
-          />
-          <div className="absolute inset-0 bg-overlay-full" />
+      <section className="landing-hero">
+        <div className="landing-hero-bg">
+          <img src={HERO_IMAGES[0]} alt="AI Art" />
+          <div className="landing-hero-overlay" />
         </div>
-
-        {/* Hero content */}
-        <div className="relative h-full flex flex-col justify-end pb-16 px-6 md:px-12 lg:px-20">
-          {/* Overline */}
-          <p className="overline mb-4 text-ink-muted">
-            AI Art Prompt Engineering Marketplace
-          </p>
-
-          {/* Big display title */}
-          <h1 className="display-xl mb-6 max-w-5xl">
+        <div className="landing-hero-content">
+          <p className="landing-overline">AI Art Prompt Engineering Marketplace</p>
+          <h1 className="landing-display-xl">
             Engineer Prompts.<br />
-            <span className="text-lx-amber">Share the Art.</span>
+            <span className="landing-text-amber">Share the Art.</span>
           </h1>
-
-          <p className="font-body text-lg text-ink-secondary max-w-xl mb-10 leading-relaxed">
-            The free community platform for AI artists. Discover structured prompts, 
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: 18, color: 'var(--text-2)', maxWidth: '36rem', marginBottom: 40, lineHeight: 1.6 }}>
+            The free community platform for AI artists. Discover structured prompts,
             dissect their anatomy, optimize with Xenon Engine, and publish your work.
           </p>
-
-          <div className="flex items-center gap-4 flex-wrap">
-            <Link to="/register" className="btn-primary text-sm px-8 py-4">
-              Get Started Free
-            </Link>
-            <Link to="/explore" className="btn-outline text-sm px-8 py-4">
-              Browse Prompts
-            </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <Link to="/register" className="btn btn-primary" style={{ fontSize: 13, padding: '12px 24px' }}>Get Started Free</Link>
+            <Link to="/explore" className="btn btn-outline" style={{ fontSize: 13, padding: '12px 24px' }}>Browse Prompts</Link>
           </div>
-
-          {/* Model strip */}
-          <div className="flex items-center gap-2 mt-12">
-            <span className="overline mr-2">Supports</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 48 }}>
+            <span className="landing-overline" style={{ marginBottom: 0, marginRight: 8 }}>Supports</span>
             {['Midjourney', 'DALL·E', 'Stable Diffusion', 'Flux', 'ComfyUI'].map(m => (
-              <span key={m} className="badge text-xs">{m}</span>
+              <span key={m} className="badge" style={{ fontSize: 12 }}>{m}</span>
             ))}
           </div>
         </div>
-
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 right-8 flex flex-col items-center gap-2 opacity-40">
-          <div className="w-px h-12 bg-ink-muted animate-pulse" />
-          <span className="overline text-xs" style={{ writingMode: 'vertical-rl' }}>scroll</span>
+        <div style={{ position: 'absolute', bottom: 32, right: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, opacity: 0.4 }}>
+          <div style={{ width: 1, height: 48, background: 'var(--text-3)', animation: 'pulse 2s ease-in-out infinite' }} />
+          <span className="landing-overline" style={{ marginBottom: 0, writingMode: 'vertical-rl', fontSize: 11 }}>scroll</span>
         </div>
       </section>
 
-      {/* ── Editorial grid ───────────────────────────────── */}
-      <section className="px-6 md:px-12 lg:px-20 py-20">
-        <div className="flex items-baseline justify-between mb-10">
-          <h2 className="display-md">Featured Prompts</h2>
-          <Link to="/explore" className="overline hover:text-ink-primary transition-colors">
-            View all →
-          </Link>
+      <section className="landing-section" style={{ paddingTop: 80, paddingBottom: 80 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 40 }}>
+          <h2 className="landing-display-md">Featured Prompts</h2>
+          <Link to="/explore" className="landing-overline" style={{ marginBottom: 0, textDecoration: 'none', color: 'var(--text-3)' }}>View all →</Link>
         </div>
-
-        {/* Masonry-style editorial grid */}
-        <div className="grid grid-cols-12 gap-3 h-[700px]">
-          {/* Large left feature */}
-          <Link to="/explore" className="art-card col-span-7 row-span-2">
-            <img src={HERO_IMAGES[1]} alt="" className="w-full h-full" />
-            <div className="art-card-overlay" />
-            <div className="art-card-content">
-              <p className="overline mb-2 text-ink-muted">Midjourney · Cyberpunk</p>
-              <h3 className="font-display text-3xl text-ink-primary leading-none mb-1">
+        <div className="landing-art-grid">
+          <Link to="/explore" className="landing-art-card" style={{ gridColumn: 'span 7', gridRow: 'span 2' }}>
+            <img src={HERO_IMAGES[1]} alt="" />
+            <div className="landing-art-card-overlay" />
+            <div className="landing-art-card-content">
+              <p className="landing-overline" style={{ marginBottom: 8 }}>Midjourney · Cyberpunk</p>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.875rem', color: 'var(--text-1)', lineHeight: 1.1, marginBottom: 4 }}>
                 Neon Metropolis<br />at Dusk
               </h3>
-              <p className="text-ink-secondary text-sm font-body mt-2">by synthetik_eye</p>
+              <p style={{ color: 'var(--text-2)', fontSize: 14, fontFamily: 'var(--font-body)', marginTop: 8 }}>by synthetik_eye</p>
             </div>
           </Link>
-
-          {/* Top right */}
-          <Link to="/explore" className="art-card col-span-5">
-            <img src={HERO_IMAGES[2]} alt="" className="w-full h-full" />
-            <div className="art-card-overlay" />
-            <div className="art-card-content">
-              <p className="overline mb-1 text-ink-muted">Flux · Organic</p>
-              <h3 className="font-display text-xl text-ink-primary leading-none">
-                Bioluminescent Forest
-              </h3>
+          <Link to="/explore" className="landing-art-card" style={{ gridColumn: 'span 5' }}>
+            <img src={HERO_IMAGES[2]} alt="" />
+            <div className="landing-art-card-overlay" />
+            <div className="landing-art-card-content">
+              <p className="landing-overline" style={{ marginBottom: 4 }}>Flux · Organic</p>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', color: 'var(--text-1)', lineHeight: 1.2 }}>Bioluminescent Forest</h3>
             </div>
           </Link>
-
-          {/* Bottom right */}
-          <Link to="/explore" className="art-card col-span-5">
-            <img src={HERO_IMAGES[3]} alt="" className="w-full h-full" />
-            <div className="art-card-overlay" />
-            <div className="art-card-content">
-              <p className="overline mb-1 text-ink-muted">DALL·E · Abstract</p>
-              <h3 className="font-display text-xl text-ink-primary leading-none">
-                Void Architecture
-              </h3>
+          <Link to="/explore" className="landing-art-card" style={{ gridColumn: 'span 5' }}>
+            <img src={HERO_IMAGES[3]} alt="" />
+            <div className="landing-art-card-overlay" />
+            <div className="landing-art-card-content">
+              <p className="landing-overline" style={{ marginBottom: 4 }}>DALL·E · Abstract</p>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', color: 'var(--text-1)', lineHeight: 1.2 }}>Void Architecture</h3>
             </div>
           </Link>
         </div>
       </section>
 
-      {/* ── What is LX-OS strip ─────────────────────────── */}
-      <section className="border-t border-border px-6 md:px-12 lg:px-20 py-20">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+      <section style={{ borderTop: '1px solid var(--border)', padding: '80px 1.5rem' }} className="landing-section">
+        <div style={{ display: 'grid', gap: 48, gridTemplateColumns: '1fr' }}>
           {[
             { num: '01', title: 'Discover', body: 'Browse a community library of AI art prompts organized by model, style, difficulty, and technique.' },
             { num: '02', title: 'Engineer', body: 'Xenon Engine parses any prompt into structured context blocks — subject, lighting, composition, style, and more.' },
             { num: '03', title: 'Share', body: 'Publish your prompts with full anatomy, example outputs, and remix lineage. Build your reputation.' },
           ].map(({ num, title, body }) => (
-            <div key={num} className="flex gap-6">
-              <span className="font-display text-5xl text-border leading-none select-none">{num}</span>
+            <div key={num} style={{ display: 'flex', gap: 24 }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: '3rem', color: 'var(--border)', lineHeight: 1, userSelect: 'none' }}>{num}</span>
               <div>
-                <h3 className="font-display text-2xl text-ink-primary mb-3">{title}</h3>
-                <p className="text-ink-secondary font-body leading-relaxed text-sm">{body}</p>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--text-1)', marginBottom: 12 }}>{title}</h3>
+                <p style={{ color: 'var(--text-2)', fontFamily: 'var(--font-body)', lineHeight: 1.6, fontSize: 14 }}>{body}</p>
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ── CTA bar ─────────────────────────────────────── */}
-      <section className="relative overflow-hidden border-t border-border">
-        <img src={HERO_IMAGES[4]} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20" />
-        <div className="relative px-6 md:px-12 lg:px-20 py-24 flex flex-col items-center text-center">
-          <p className="overline mb-4">Free Forever</p>
-          <h2 className="display-xl mb-6">Start Creating</h2>
-          <Link to="/register" className="btn-primary text-sm px-12 py-4">
-            Join the Community
-          </Link>
+      <section style={{ position: 'relative', overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
+        <img src={HERO_IMAGES[4]} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.2 }} />
+        <div style={{ position: 'relative', padding: '96px 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }} className="landing-section">
+          <p className="landing-overline" style={{ marginBottom: 16 }}>Free Forever</p>
+          <h2 className="landing-display-xl" style={{ marginBottom: 24 }}>Start Creating</h2>
+          <Link to="/register" className="btn btn-primary" style={{ fontSize: 13, padding: '12px 32px' }}>Join the Community</Link>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-border px-6 md:px-12 py-8 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-6 h-6 bg-lx-white flex items-center justify-center">
-            <span className="font-display text-void text-xs leading-none">LX</span>
-          </div>
-          <span className="font-sub tracking-widest text-xs uppercase text-ink-muted">LX-OS</span>
+      <footer className="landing-footer">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="landing-logo-box" style={{ width: 24, height: 24, fontSize: 10 }}>LX</div>
+          <span style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.12em', fontSize: 12, textTransform: 'uppercase', color: 'var(--text-3)' }}>LX-OS</span>
         </div>
-        <p className="text-xs text-ink-muted font-body">
+        <p style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-body)' }}>
           Free, community-first. No paywalls on prompts.
         </p>
       </footer>

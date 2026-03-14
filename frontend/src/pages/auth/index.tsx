@@ -8,6 +8,7 @@ export default function AuthPage() {
   const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
   const [focused, setFocused] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -35,13 +36,14 @@ export default function AuthPage() {
     setLoading(true)
     try {
       if (tab === 'signin') {
-        await login(loginId, password)
+        await login(loginId, password, rememberMe)
       } else {
         await register(username, loginId, password)
       }
       navigate('/feed')
     } catch (e: any) {
-      setError(e?.message ?? 'Something went wrong')
+      const msg = e?.response?.data?.detail ?? e?.message ?? 'Something went wrong'
+      setError(Array.isArray(msg) ? msg[0] ?? msg : msg)
     } finally {
       setLoading(false)
     }
@@ -154,7 +156,8 @@ export default function AuthPage() {
               />
             )}
             <input
-              type="text" placeholder="Username or email"
+              type={tab === 'signup' ? 'email' : 'text'}
+              placeholder={tab === 'signup' ? 'Email' : 'Username or email'}
               value={loginId} onChange={e => setLoginId(e.target.value)}
               style={inputStyle('email')}
               onFocus={() => setFocused('email')} onBlur={() => setFocused(null)}
@@ -168,6 +171,39 @@ export default function AuthPage() {
               onKeyDown={e => e.key === 'Enter' && handleSubmit()}
             />
           </div>
+
+          {tab === 'signin' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={rememberMe}
+                onClick={() => setRememberMe((v) => !v)}
+                style={{
+                  width: 36,
+                  height: 20,
+                  borderRadius: 10,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: rememberMe ? 'rgba(110,86,207,0.6)' : 'rgba(255,255,255,0.1)',
+                  position: 'relative',
+                  transition: 'background 0.2s ease',
+                }}
+              >
+                <span style={{
+                  position: 'absolute',
+                  top: 2,
+                  left: rememberMe ? 18 : 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  background: '#fff',
+                  transition: 'left 0.2s ease',
+                }} />
+              </button>
+              <span style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-body)' }}>Remember me</span>
+            </div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: tab === 'signin' ? 'flex-end' : 'center', marginBottom: 18 }}>
             {tab === 'signin'

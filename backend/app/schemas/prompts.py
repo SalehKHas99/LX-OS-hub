@@ -188,6 +188,8 @@ class PromptCard(BaseModel):
     tags: List[TagOut] = []
     images: List[PromptImageOut] = []
     created_at: datetime
+    current_user_vote: Optional[int] = None  # 1 upvote, -1 downvote, None not voted
+    is_saved: Optional[bool] = None  # True if current user has saved (bookmarked) this prompt
 
     model_config = {"from_attributes": True}
 
@@ -211,5 +213,7 @@ class PromptDetail(BaseModel):
     images: List[PromptImageOut] = []
     created_at: datetime
     updated_at: datetime
+    current_user_vote: Optional[int] = None  # 1 upvote, -1 downvote, None not voted
+    is_saved: Optional[bool] = None  # True if current user has saved (bookmarked) this prompt
 
     model_config = {"from_attributes": True}

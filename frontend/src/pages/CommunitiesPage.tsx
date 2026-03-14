@@ -137,24 +137,9 @@ export default function CommunitiesPage() {
 
       {/* content */}
       {loading ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}
-        >
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              style={{
-                height: 96,
-                borderRadius: 18,
-                border: '1px solid rgba(148,163,184,0.4)',
-                background: 'rgba(15,23,42,0.8)',
-                opacity: 0.4,
-              }}
-            />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton theme-card" style={{ height: 100, borderRadius: 16 }} />
           ))}
         </div>
       ) : filtered.length === 0 ? (

@@ -2,7 +2,8 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { collectionsApi } from '../api'
 import { PromptCard } from '../components/prompts/PromptCard'
-import { BookMarked, ArrowLeft, Loader2 } from 'lucide-react'
+import { BookMarked, ArrowLeft } from 'lucide-react'
+import { SkeletonDetailLayout } from '../components/ui/Skeleton'
 
 export default function CollectionDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -14,18 +15,14 @@ export default function CollectionDetailPage() {
   })
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="animate-spin" size={28} style={{ color: 'var(--accent)' }} />
-      </div>
-    )
+    return <SkeletonDetailLayout />
   }
 
   if (error || !collection) {
     return (
-      <div className="page-header max-w-5xl mx-auto">
+      <div className="page-container page-header">
         <h1 className="page-title">Collection not found</h1>
-        <p className="page-subtitle mb-4">This collection doesn&apos;t exist or was removed.</p>
+        <p className="page-subtitle" style={{ marginBottom: 16 }}>This collection doesn&apos;t exist or was removed.</p>
         <Link to="/collections" className="page-header-breadcrumb">
           <ArrowLeft size={12} /> Collections
         </Link>
@@ -34,29 +31,27 @@ export default function CollectionDetailPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto w-full">
+    <div className="page-container page-container-sm" style={{ width: '100%' }}>
       <div className="page-header">
         <Link to="/collections" className="page-header-breadcrumb">
           <ArrowLeft size={12} /> Collections
         </Link>
         <h1 className="page-title">{collection.title}</h1>
-        {collection.description ? (
-          <p className="page-subtitle">{collection.description}</p>
-        ) : null}
+        {collection.description ? <p className="page-subtitle">{collection.description}</p> : null}
       </div>
 
       <div className="page-content">
         {collection.prompts.length === 0 ? (
-          <div className="text-center py-20">
-            <BookMarked size={32} className="mx-auto mb-3 opacity-20" style={{ color: 'var(--text-2)' }} />
-            <p className="page-title text-lg mb-2">No prompts in this collection</p>
-            <p style={{ color: 'var(--text-2)', fontFamily: 'Nunito', fontSize: '0.875rem' }}>
+          <div className="empty-state">
+            <BookMarked size={32} style={{ color: 'var(--text-2)' }} className="empty-state-icon" />
+            <p className="section-title" style={{ fontSize: '1.125rem', marginBottom: 8 }}>No prompts in this collection</p>
+            <p style={{ color: 'var(--text-2)', fontFamily: 'var(--font-body)', fontSize: 14 }}>
               Save prompts from the feed or prompt pages to add them here.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {collection.prompts.map((p: any) => (
+          <div className="prompts-grid">
+            {collection.prompts.map((p) => (
               <PromptCard key={p.id} prompt={p} />
             ))}
           </div>

@@ -19,6 +19,8 @@ from app.models.community import (
     CommunityBan,
 )
 from app.models.prompt import Prompt, PromptStatus
+from app.models.vote import PromptVote
+from app.models.saved_prompt import SavedPrompt
 from app.models.tag import PromptTag
 from app.schemas.communities import (
     CommunityCreate,
@@ -858,12 +860,33 @@ async def community_prompts(
     result = await db.execute(stmt.offset(offset).limit(page_size))
     prompts = result.scalars().all()
 
+    vote_map: dict[UUID, int] = {}
+    saved_set: set[UUID] = set()
+    if current_user and prompts:
+        vote_rows = await db.execute(
+            select(PromptVote.prompt_id, PromptVote.value).where(
+                PromptVote.user_id == current_user.id,
+                PromptVote.prompt_id.in_([p.id for p in prompts]),
+            )
+        )
+        for pid, val in vote_rows.all():
+            vote_map[pid] = val
+        saved_rows = await db.execute(
+            select(SavedPrompt.prompt_id).where(
+                SavedPrompt.user_id == current_user.id,
+                SavedPrompt.prompt_id.in_([p.id for p in prompts]),
+            )
+        )
+        saved_set = {row for (row,) in saved_rows.all()}
+
     items = [
         PromptCard.model_validate({
             "id": p.id, "title": p.title, "model_family": p.model_family.value if p.model_family else None,
             "score": p.score, "creator": p.creator,
             "tags": [pt.tag for pt in p.prompt_tags],
             "images": p.images, "created_at": p.created_at,
+            "current_user_vote": vote_map.get(p.id),
+            "is_saved": p.id in saved_set if current_user else None,
         })
         for p in prompts
     ]

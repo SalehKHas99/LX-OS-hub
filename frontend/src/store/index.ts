@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import type { User } from '../types'
 import { authApi } from '../api'
+import { TOKEN_KEYS, getStorage, hasStoredToken } from '../lib/authStorage'
 
 interface AuthState {
   user: User | null
   isLoading: boolean
   isAuthenticated: boolean
-  login: (login: string, password: string) => Promise<void>
+  login: (login: string, password: string, remember?: boolean) => Promise<void>
   register: (username: string, email: string, password: string) => Promise<void>
   logout: () => void
   fetchMe: () => Promise<void>
@@ -15,14 +16,15 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: false,
-  isAuthenticated: !!localStorage.getItem('access_token'),
+  isAuthenticated: hasStoredToken(),
 
-  login: async (login, password) => {
+  login: async (login, password, remember = true) => {
     set({ isLoading: true })
     try {
       const { data } = await authApi.login({ login, password })
-      localStorage.setItem('access_token', data.access_token)
-      localStorage.setItem('refresh_token', data.refresh_token)
+      const storage = getStorage(remember)
+      storage.setItem(TOKEN_KEYS.access, data.access_token)
+      storage.setItem(TOKEN_KEYS.refresh, data.refresh_token)
       const { data: user } = await authApi.me()
       set({ user, isAuthenticated: true, isLoading: false })
     } catch (e) { set({ isLoading: false }); throw e }
@@ -32,26 +34,33 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true })
     try {
       const { data } = await authApi.register({ username, email, password })
-      localStorage.setItem('access_token', data.access_token)
-      localStorage.setItem('refresh_token', data.refresh_token)
+      const storage = getStorage(true)
+      storage.setItem(TOKEN_KEYS.access, data.access_token)
+      storage.setItem(TOKEN_KEYS.refresh, data.refresh_token)
       const { data: user } = await authApi.me()
       set({ user, isAuthenticated: true, isLoading: false })
     } catch (e) { set({ isLoading: false }); throw e }
   },
 
   logout: () => {
-    localStorage.clear()
+    localStorage.removeItem(TOKEN_KEYS.access)
+    localStorage.removeItem(TOKEN_KEYS.refresh)
+    sessionStorage.removeItem(TOKEN_KEYS.access)
+    sessionStorage.removeItem(TOKEN_KEYS.refresh)
     set({ user: null, isAuthenticated: false })
   },
 
   fetchMe: async () => {
-    const token = localStorage.getItem('access_token')
+    const token = localStorage.getItem(TOKEN_KEYS.access) ?? sessionStorage.getItem(TOKEN_KEYS.access)
     if (!token) return
     try {
       const { data } = await authApi.me()
       set({ user: data, isAuthenticated: true })
     } catch {
-      localStorage.clear()
+      localStorage.removeItem(TOKEN_KEYS.access)
+      localStorage.removeItem(TOKEN_KEYS.refresh)
+      sessionStorage.removeItem(TOKEN_KEYS.access)
+      sessionStorage.removeItem(TOKEN_KEYS.refresh)
       set({ user: null, isAuthenticated: false })
     }
   },

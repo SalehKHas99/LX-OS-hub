@@ -1,6 +1,7 @@
 export interface User {
   id: string; username: string; email: string; role: string
   bio: string | null; avatar_url: string | null
+  public_key?: string | null
   created_at?: string; prompt_count?: number
 }
 export interface Tag { id: string; slug: string; display_name: string }
@@ -13,6 +14,8 @@ export interface Creator { id: string; username: string; avatar_url: string | nu
 export interface PromptCard {
   id: string; title: string; model_family: string | null; score: number
   creator: Creator; tags: Tag[]; images: PromptImage[]; created_at: string
+  current_user_vote?: number | null  // 1 upvote, -1 downvote, null not voted
+  is_saved?: boolean | null  // bookmark/save (distinct from vote)
 }
 export interface PromptDetail extends PromptCard {
   raw_prompt: string; negative_prompt: string | null; notes: string | null
@@ -23,6 +26,8 @@ export interface Comment {
   id: string; content: string; user: Creator
   parent_comment_id: string | null; moderation_state: string
   created_at: string; replies: Comment[]
+  vote_score?: number
+  current_user_vote?: number | null  // 1 upvote, -1 downvote, null not voted
 }
 export interface Community {
   id: string
@@ -54,12 +59,33 @@ export interface Message {
   is_from_me: boolean
 }
 
+export interface MessagesWithResponse {
+  messages: Message[]
+  has_more: boolean
+  next_before: string | null
+  other_user_id?: string | null
+  other_username?: string | null
+}
+
 export interface ConversationSummary {
   other_user_id: string
   other_username: string
   last_message_preview: string | null
   last_at: string | null
   unread_count: number
+}
+
+export interface Friend {
+  user_id: string
+  username: string
+  status: 'accepted' | 'pending'
+  created_at: string
+}
+
+export interface BlockedUser {
+  user_id: string
+  username: string
+  blocked_at: string
 }
 
 // Community wall post (frontend-only type — backed by /communities/{slug}/posts)
@@ -98,6 +124,11 @@ export interface Collection {
   id: string; title: string; description: string | null
   owner_id: string; created_at: string
 }
+
+/** Collection detail from GET /collections/:id — includes full prompt cards */
+export interface CollectionDetail extends Collection {
+  prompts: PromptCard[]
+}
 export interface PaginatedResponse<T> {
   items: T[]; total: number; page: number; page_size: number; has_more: boolean
 }
@@ -122,6 +153,7 @@ export interface Notification {
   entity_type: string
   entity_id: string
   entity_slug?: string | null
+  prompt_id?: string | null  // when entity_type is comment, for link to prompt page
   message: string
   is_read: boolean
   created_at: string

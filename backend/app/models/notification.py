@@ -20,6 +20,10 @@ class NotificationType(str, enum.Enum):
     prompt_upvote = "prompt_upvote"
     prompt_downvote = "prompt_downvote"
     message_received = "message_received"
+    message_request = "message_request"  # DM from someone you haven't accepted yet
+    friend_request = "friend_request"  # Someone sent you a friend request
+    comment_upvote = "comment_upvote"
+    comment_downvote = "comment_downvote"
 
 
 class Notification(Base):

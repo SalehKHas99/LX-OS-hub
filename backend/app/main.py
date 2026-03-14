@@ -1,17 +1,23 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.settings import settings
+from app.database.session import check_db_connectivity
+from app.logging_config import configure_logging, get_logger
 from app.routers import auth
+
+configure_logging()
+logger = get_logger(__name__)
 from app.routers import prompts, search, communities, collections, profiles, reports
 from app.routers import lab
 from app.routers import uploads
 from app.routers import community_posts
 from app.routers import notifications
 from app.routers import moderator_invites
-from app.routers import messages
+from app.routers import messages, friends, blocks
 
 _IS_PROD = (settings.ENVIRONMENT or "").strip().lower() in ("production", "prod")
 
@@ -45,7 +51,20 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
+    """Liveness: app is up. No DB check."""
     return {"status": "ok", "version": "0.4.0"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness: app + DB. Returns 503 if DB unreachable (e.g. for k8s readiness probe)."""
+    if await check_db_connectivity():
+        return {"status": "ok", "version": "0.4.0", "db": "connected"}
+    logger.warning("health_ready: DB unreachable")
+    return JSONResponse(
+        status_code=503,
+        content={"status": "degraded", "db": "unreachable"},
+    )
 
 
 # Auth
@@ -64,3 +83,5 @@ app.include_router(uploads.router,    prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(moderator_invites.router, prefix="/api/v1")
 app.include_router(messages.router, prefix="/api/v1")
+app.include_router(friends.router, prefix="/api/v1")
+app.include_router(blocks.router, prefix="/api/v1")

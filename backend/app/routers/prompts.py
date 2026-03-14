@@ -12,10 +12,12 @@ from app.models.prompt import Prompt, PromptContextBlock, PromptStatus, ModelFam
 from app.models.tag import Tag, PromptTag
 from app.models.comment import Comment, ModerationState
 from app.models.notification import Notification, NotificationType
+from app.models.vote import PromptVote, CommentVote
+from app.models.saved_prompt import SavedPrompt
 from app.models.collection import CollectionItem
 from app.models.community import Community, CommunityMember, CommunityVisibility
 from app.schemas.prompts import PromptCreate, PromptUpdate, PromptCard, PromptDetail
-from app.schemas.comments import CommentCreate, CommentOut
+from app.schemas.comments import CommentCreate, CommentUpdate, CommentOut, VoteIn
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
@@ -42,8 +44,12 @@ async def _get_prompt_or_404(prompt_id: UUID, db: AsyncSession) -> Prompt:
     return prompt
 
 
-def _build_prompt_card(p: Prompt) -> dict:
-    return {
+def _build_prompt_card(
+    p: Prompt,
+    current_user_vote: Optional[int] = None,
+    is_saved: Optional[bool] = None,
+) -> dict:
+    out = {
         "id": p.id,
         "title": p.title,
         "model_family": p.model_family.value if p.model_family else None,
@@ -52,12 +58,19 @@ def _build_prompt_card(p: Prompt) -> dict:
         "tags": [pt.tag for pt in p.prompt_tags],
         "images": p.images,
         "created_at": p.created_at,
+        "current_user_vote": current_user_vote,
+        "is_saved": is_saved,
     }
+    return out
 
 
-def _build_prompt_detail(p: Prompt) -> dict:
-    return {
-        **_build_prompt_card(p),
+def _build_prompt_detail(
+    p: Prompt,
+    current_user_vote: Optional[int] = None,
+    is_saved: Optional[bool] = None,
+) -> dict:
+    out = {
+        **_build_prompt_card(p, current_user_vote, is_saved),
         "raw_prompt": p.raw_prompt,
         "negative_prompt": p.negative_prompt,
         "notes": p.notes,
@@ -67,6 +80,7 @@ def _build_prompt_detail(p: Prompt) -> dict:
         "context_blocks": p.context_blocks,
         "updated_at": p.updated_at,
     }
+    return out
 
 
 # ── Feed ──────────────────────────────────────────────────────────────────────
@@ -104,8 +118,30 @@ async def get_feed(
     result = await db.execute(q.offset(offset).limit(page_size))
     prompts = result.scalars().all()
 
+    vote_map: dict[UUID, int] = {}
+    saved_set: set[UUID] = set()
+    if current_user and prompts:
+        vote_rows = await db.execute(
+            select(PromptVote.prompt_id, PromptVote.value).where(
+                PromptVote.user_id == current_user.id,
+                PromptVote.prompt_id.in_([p.id for p in prompts]),
+            )
+        )
+        for pid, val in vote_rows.all():
+            vote_map[pid] = val
+        saved_rows = await db.execute(
+            select(SavedPrompt.prompt_id).where(
+                SavedPrompt.user_id == current_user.id,
+                SavedPrompt.prompt_id.in_([p.id for p in prompts]),
+            )
+        )
+        saved_set = {row for (row,) in saved_rows.all()}
+
     return PaginatedResponse(
-        items=[PromptCard.model_validate(_build_prompt_card(p)) for p in prompts],
+        items=[
+            PromptCard.model_validate(_build_prompt_card(p, vote_map.get(p.id), p.id in saved_set if current_user else None))
+            for p in prompts
+        ],
         total=total,
         page=page,
         page_size=page_size,
@@ -195,20 +231,43 @@ async def create_prompt(
             select(Prompt).options(*_prompt_load_options()).where(Prompt.id == prompt.id)
         )
         prompt = result.scalar_one()
-        return PromptDetail.model_validate(_build_prompt_detail(prompt))
+        return PromptDetail.model_validate(_build_prompt_detail(prompt, None, False))
     except HTTPException:
         raise
     except Exception as e:
         # Surface the underlying error in development to make debugging easier.
-        raise HTTPException(status_code=500, detail=f"Failed to create prompt: {e}") from None
+        raise HTTPException(status_code=500, detail="Failed to create prompt") from None
 
 
 # ── Get prompt detail ─────────────────────────────────────────────────────────
 
 @router.get("/{prompt_id}", response_model=PromptDetail)
-async def get_prompt(prompt_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_prompt(
+    prompt_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     prompt = await _get_prompt_or_404(prompt_id, db)
-    return PromptDetail.model_validate(_build_prompt_detail(prompt))
+    current_user_vote: Optional[int] = None
+    is_saved: Optional[bool] = None
+    if current_user:
+        r = await db.execute(
+            select(PromptVote.value).where(
+                PromptVote.user_id == current_user.id,
+                PromptVote.prompt_id == prompt_id,
+            )
+        )
+        row = r.scalar_one_or_none()
+        if row is not None:
+            current_user_vote = row
+        saved = await db.execute(
+            select(SavedPrompt.prompt_id).where(
+                SavedPrompt.user_id == current_user.id,
+                SavedPrompt.prompt_id == prompt_id,
+            )
+        )
+        is_saved = saved.scalar_one_or_none() is not None
+    return PromptDetail.model_validate(_build_prompt_detail(prompt, current_user_vote, is_saved))
 
 
 # ── Update prompt ─────────────────────────────────────────────────────────────
@@ -256,7 +315,21 @@ async def update_prompt(
         select(Prompt).options(*_prompt_load_options()).where(Prompt.id == prompt.id)
     )
     prompt = result.scalar_one()
-    return PromptDetail.model_validate(_build_prompt_detail(prompt))
+    r = await db.execute(
+        select(PromptVote.value).where(
+            PromptVote.user_id == current_user.id,
+            PromptVote.prompt_id == prompt_id,
+        )
+    )
+    current_user_vote = r.scalar_one_or_none()
+    saved = await db.execute(
+        select(SavedPrompt.prompt_id).where(
+            SavedPrompt.user_id == current_user.id,
+            SavedPrompt.prompt_id == prompt_id,
+        )
+    )
+    is_saved = saved.scalar_one_or_none() is not None
+    return PromptDetail.model_validate(_build_prompt_detail(prompt, current_user_vote, is_saved))
 
 
 # ── Delete prompt ─────────────────────────────────────────────────────────────
@@ -274,7 +347,71 @@ async def delete_prompt(
     await db.commit()
 
 
-# ── Save / unsave ─────────────────────────────────────────────────────────────
+# ── Prompt vote (upvote / downvote) ───────────────────────────────────────────
+
+async def _recalc_prompt_score(prompt_id: UUID, db: AsyncSession) -> None:
+    r = await db.execute(
+        select(func.coalesce(func.sum(PromptVote.value), 0)).where(
+            PromptVote.prompt_id == prompt_id
+        )
+    )
+    new_score = int(r.scalar_one())
+    await db.execute(update(Prompt).where(Prompt.id == prompt_id).values(score=new_score))
+
+
+@router.post("/{prompt_id}/vote", status_code=204)
+async def vote_prompt(
+    prompt_id: UUID,
+    payload: VoteIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    prompt = await _get_prompt_or_404(prompt_id, db)
+    existing = await db.execute(
+        select(PromptVote).where(
+            PromptVote.user_id == current_user.id,
+            PromptVote.prompt_id == prompt_id,
+        )
+    )
+    pv = existing.scalar_one_or_none()
+    if pv:
+        pv.value = payload.value
+    else:
+        db.add(PromptVote(user_id=current_user.id, prompt_id=prompt_id, value=payload.value))
+    await _recalc_prompt_score(prompt_id, db)
+    if prompt.creator_id != current_user.id:
+        notif_type = NotificationType.prompt_upvote if payload.value == 1 else NotificationType.prompt_downvote
+        db.add(
+            Notification(
+                user_id=prompt.creator_id,
+                actor_id=current_user.id,
+                notification_type=notif_type,
+                entity_type="prompt",
+                entity_id=prompt.id,
+                message=f"{current_user.username} {'upvoted' if payload.value == 1 else 'downvoted'} your prompt",
+            )
+        )
+    await db.commit()
+
+
+@router.delete("/{prompt_id}/vote", status_code=204)
+async def remove_prompt_vote(
+    prompt_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _get_prompt_or_404(prompt_id, db)
+    await db.execute(
+        PromptVote.__table__.delete().where(
+            PromptVote.user_id == current_user.id,
+            PromptVote.prompt_id == prompt_id,
+        )
+    )
+    await _recalc_prompt_score(prompt_id, db)
+    await db.commit()
+
+
+# ── Save / unsave (bookmark; distinct from vote) ───────────────────────────────
 
 @router.post("/{prompt_id}/save", status_code=204)
 async def save_prompt(
@@ -282,21 +419,17 @@ async def save_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    prompt = await _get_prompt_or_404(prompt_id, db)
-    await db.execute(
-        update(Prompt).where(Prompt.id == prompt.id).values(score=Prompt.score + 1)
-    )
-    if prompt.creator_id != current_user.id:
-        db.add(
-            Notification(
-                user_id=prompt.creator_id,
-                actor_id=current_user.id,
-                notification_type=NotificationType.prompt_upvote,
-                entity_type="prompt",
-                entity_id=prompt.id,
-                message=f"{current_user.username} upvoted your prompt",
-            )
+    """Bookmark/save a prompt (distinct from upvote)."""
+    await _get_prompt_or_404(prompt_id, db)
+    existing = await db.execute(
+        select(SavedPrompt).where(
+            SavedPrompt.user_id == current_user.id,
+            SavedPrompt.prompt_id == prompt_id,
         )
+    )
+    if existing.scalar_one_or_none():
+        return  # already saved
+    db.add(SavedPrompt(user_id=current_user.id, prompt_id=prompt_id))
     await db.commit()
 
 
@@ -306,29 +439,24 @@ async def unsave_prompt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    prompt = await _get_prompt_or_404(prompt_id, db)
+    """Remove prompt from saved/bookmarks."""
+    await _get_prompt_or_404(prompt_id, db)
     await db.execute(
-        update(Prompt).where(Prompt.id == prompt.id).values(
-            score=func.greatest(Prompt.score - 1, 0)
+        SavedPrompt.__table__.delete().where(
+            SavedPrompt.user_id == current_user.id,
+            SavedPrompt.prompt_id == prompt_id,
         )
     )
-    if prompt.creator_id != current_user.id:
-        db.add(
-            Notification(
-                user_id=prompt.creator_id,
-                actor_id=current_user.id,
-                notification_type=NotificationType.prompt_downvote,
-                entity_type="prompt",
-                entity_id=prompt.id,
-                message=f"{current_user.username} downvoted your prompt",
-            )
-        )
     await db.commit()
 
 
 # ── Comments ──────────────────────────────────────────────────────────────────
 
-def _comment_to_out(c: Comment, replies: list[dict] | None = None) -> dict:
+def _comment_to_out(
+    c: Comment,
+    replies: list[dict] | None = None,
+    current_user_vote: Optional[int] = None,
+) -> dict:
     """Build a dict for CommentOut without touching c.replies (lazy='raise')."""
     return {
         "id": c.id,
@@ -338,11 +466,17 @@ def _comment_to_out(c: Comment, replies: list[dict] | None = None) -> dict:
         "moderation_state": c.moderation_state.value if c.moderation_state else "visible",
         "created_at": c.created_at,
         "replies": replies if replies is not None else [],
+        "vote_score": getattr(c, "vote_score", 0),
+        "current_user_vote": current_user_vote,
     }
 
 
 @router.get("/{prompt_id}/comments", response_model=list[CommentOut])
-async def get_comments(prompt_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_comments(
+    prompt_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     await _get_prompt_or_404(prompt_id, db)
     result = await db.execute(
         select(Comment)
@@ -358,13 +492,29 @@ async def get_comments(prompt_id: UUID, db: AsyncSession = Depends(get_db)):
         .order_by(Comment.created_at.asc())
     )
     top_level = result.scalars().all()
+    all_comments = list(top_level) + [r for c in top_level for r in c.replies]
+    comment_ids = [c.id for c in all_comments]
+    vote_map: dict[UUID, int] = {}
+    if current_user and comment_ids:
+        vote_rows = await db.execute(
+            select(CommentVote.comment_id, CommentVote.value).where(
+                CommentVote.user_id == current_user.id,
+                CommentVote.comment_id.in_(comment_ids),
+            )
+        )
+        for cid, val in vote_rows.all():
+            vote_map[cid] = val
     out = []
     for c in top_level:
         reply_dicts = [
-            _comment_to_out(reply)
+            _comment_to_out(reply, current_user_vote=vote_map.get(reply.id))
             for reply in c.replies
         ]
-        out.append(CommentOut.model_validate(_comment_to_out(c, replies=reply_dicts)))
+        out.append(
+            CommentOut.model_validate(
+                _comment_to_out(c, replies=reply_dicts, current_user_vote=vote_map.get(c.id))
+            )
+        )
     return out
 
 
@@ -404,7 +554,7 @@ async def add_comment(
         )
         out = result.scalar_one()
 
-        # Notifications: reply to comment author
+        # Notifications: reply to comment author (entity = comment for deep link)
         if payload.parent_comment_id is not None:
             parent_res = await db.execute(
                 select(Comment).where(Comment.id == payload.parent_comment_id)
@@ -416,13 +566,13 @@ async def add_comment(
                         user_id=parent.user_id,
                         actor_id=current_user.id,
                         notification_type=NotificationType.comment_reply,
-                        entity_type="prompt",
-                        entity_id=prompt_id,
+                        entity_type="comment",
+                        entity_id=comment.id,
                         message=f"{current_user.username} replied to your comment",
                     )
                 )
 
-        # Mentions: @username in content
+        # Mentions: @username in content (entity points to comment for deep link)
         import re
 
         mentioned_usernames = set(re.findall(r"@([a-zA-Z0-9_-]{3,30})", comment.content or ""))
@@ -440,8 +590,8 @@ async def add_comment(
                         user_id=u.id,
                         actor_id=current_user.id,
                         notification_type=NotificationType.comment_mention,
-                        entity_type="prompt",
-                        entity_id=prompt_id,
+                        entity_type="comment",
+                        entity_id=comment.id,
                         message=f"{current_user.username} mentioned you in a comment",
                     )
                 )
@@ -469,8 +619,161 @@ async def add_comment(
             "moderation_state": out.moderation_state.value if out.moderation_state else "visible",
             "created_at": out.created_at,
             "replies": [],
+            "vote_score": 0,
+            "current_user_vote": None,
         })
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to add comment") from None
+
+
+@router.patch("/{prompt_id}/comments/{comment_id}", response_model=CommentOut)
+async def update_comment(
+    prompt_id: UUID,
+    comment_id: UUID,
+    payload: CommentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit a comment (author only)."""
+    await _get_prompt_or_404(prompt_id, db)
+    result = await db.execute(
+        select(Comment)
+        .options(selectinload(Comment.user))
+        .where(
+            Comment.id == comment_id,
+            Comment.prompt_id == prompt_id,
+        )
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your comment")
+    comment.content = payload.content.strip()
+    if not comment.content:
+        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    await db.commit()
+    await db.refresh(comment)
+    vote_row = await db.execute(
+        select(CommentVote.value).where(
+            CommentVote.user_id == current_user.id,
+            CommentVote.comment_id == comment_id,
+        )
+    )
+    current_user_vote = vote_row.scalar_one_or_none()
+    return CommentOut.model_validate(
+        _comment_to_out(comment, replies=[], current_user_vote=current_user_vote)
+    )
+
+
+@router.delete("/{prompt_id}/comments/{comment_id}", status_code=204)
+async def delete_comment(
+    prompt_id: UUID,
+    comment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a comment (author only). Soft-delete: sets moderation_state to removed."""
+    await _get_prompt_or_404(prompt_id, db)
+    result = await db.execute(
+        select(Comment).where(
+            Comment.id == comment_id,
+            Comment.prompt_id == prompt_id,
+        )
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your comment")
+    comment.moderation_state = ModerationState.removed
+    await db.commit()
+
+
+# ── Comment vote ───────────────────────────────────────────────────────────────
+
+async def _recalc_comment_score(comment_id: UUID, db: AsyncSession) -> None:
+    r = await db.execute(
+        select(func.coalesce(func.sum(CommentVote.value), 0)).where(
+            CommentVote.comment_id == comment_id
+        )
+    )
+    new_score = int(r.scalar_one())
+    await db.execute(
+        update(Comment).where(Comment.id == comment_id).values(vote_score=new_score)
+    )
+
+
+@router.post("/{prompt_id}/comments/{comment_id}/vote", status_code=204)
+async def vote_comment(
+    prompt_id: UUID,
+    comment_id: UUID,
+    payload: VoteIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _get_prompt_or_404(prompt_id, db)
+    comment_result = await db.execute(
+        select(Comment).where(
+            Comment.id == comment_id,
+            Comment.prompt_id == prompt_id,
+        )
+    )
+    comment = comment_result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    existing = await db.execute(
+        select(CommentVote).where(
+            CommentVote.user_id == current_user.id,
+            CommentVote.comment_id == comment_id,
+        )
+    )
+    cv = existing.scalar_one_or_none()
+    if cv:
+        cv.value = payload.value
+    else:
+        db.add(CommentVote(user_id=current_user.id, comment_id=comment_id, value=payload.value))
+    await _recalc_comment_score(comment_id, db)
+    if comment.user_id != current_user.id:
+        notif_type = (
+            NotificationType.comment_upvote if payload.value == 1 else NotificationType.comment_downvote
+        )
+        db.add(
+            Notification(
+                user_id=comment.user_id,
+                actor_id=current_user.id,
+                notification_type=notif_type,
+                entity_type="comment",
+                entity_id=comment_id,
+                message=f"{current_user.username} {'upvoted' if payload.value == 1 else 'downvoted'} your comment",
+            )
+        )
+    await db.commit()
+
+
+@router.delete("/{prompt_id}/comments/{comment_id}/vote", status_code=204)
+async def remove_comment_vote(
+    prompt_id: UUID,
+    comment_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _get_prompt_or_404(prompt_id, db)
+    comment_result = await db.execute(
+        select(Comment).where(
+            Comment.id == comment_id,
+            Comment.prompt_id == prompt_id,
+        )
+    )
+    if not comment_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Comment not found")
+    await db.execute(
+        CommentVote.__table__.delete().where(
+            CommentVote.user_id == current_user.id,
+            CommentVote.comment_id == comment_id,
+        )
+    )
+    await _recalc_comment_score(comment_id, db)
+    await db.commit()
